@@ -19,7 +19,7 @@ ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat)
 Tracker.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]     # Tracker.forward per slice
 Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]  # ForwardDiff on slices
 
-# Zygote.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat)
+# Zygote.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat) # errors
 Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]      # Zygote.forward 
 Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 ```
@@ -36,8 +36,8 @@ mat1k = rand(3,1000);
 
 @btime ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), $mat1k); # 372.705 ms
 @btime Tracker.gradient(m -> sum(sin, mapcols(fun, m)), $mat1k);               #  70.203 ms
-@btime Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);            #     255.032 μs
-@btime Zygote.gradient(m -> sum(sin, mapcols(fun, m)), $mat1k);                #  20.018 ms
+@btime Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);            #     255.032 μs, 690.09 KiB
+@btime Zygote.gradient(m -> sum(sin, mapcols(fun, m)), $mat1k);                #  20.018 ms, 3.82 MiB
 @btime Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);             #     354.112 μs
 ```
 
@@ -45,6 +45,19 @@ Of course `mapslices()` does things other than columns of matrices.
 Most of which can be done better with `eachslice()` and `reduce(hcat,...)`, 
 maybe with some thought one could just write gradients for those. 
 
+Perhaps done. The views of `eachcol()` have quite inefficient gradients, 
+but `collecteachcol()` is efficient:
+
+```julia
+@btime Zygote.gradient(m -> sum(sin, mapcols4(fun, m)), $mat1k);  # 45.616 ms, 49.49 MiB
+@btime Zygote.gradient(m -> sum(sin, mapcols6(fun, m)), $mat1k);  # 18.655 ms,  3.37 MiB
+```
+
+<!--
 Or for the slice/glue functions in [TensorCast](https://github.com/mcabbott/TensorCast.jl),
 which now does some mapslices things (and will soon do many more) by chaining such functions.
+-->
 
+Issues about mapslices:
+* https://github.com/FluxML/Zygote.jl/issues/92
+* https://github.com/FluxML/Flux.jl/issues/741

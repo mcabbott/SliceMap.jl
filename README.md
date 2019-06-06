@@ -4,7 +4,7 @@ It would be nice if [Flux](https://github.com/FluxML/Flux.jl) worked with `mapsl
 or with something generalising that. This package has some quick attempts:
 
 ```julia
-mat = rand(1:99, 3,10)
+mat = rand(1:9, 3,10)
 fun(x) = 2 .+ x.^2
 mapslices(fun, mat, dims=1)
 
@@ -31,32 +31,45 @@ mat1k = rand(3,1000);
 
 @btime mapslices(fun, $mat1k, dims=1)  # 1.017 ms
 @btime mapcols(fun, $mat1k)            #   399.016 μs
-@btime MapCols{3}(fun, $mat1k)         #    46.733 μs
-@btime MapCols(fun, $mat1k)            #    59.471 μs without size
+@btime MapCols{3}(fun, $mat1k)         #    15.564 μs
+@btime MapCols(fun, $mat1k)            #    16.774 μs  without size
 
 @btime ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), $mat1k); # 372.705 ms
 @btime Tracker.gradient(m -> sum(sin, mapcols(fun, m)), $mat1k);               #  70.203 ms
-@btime Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);            #     255.032 μs, 690.09 KiB
+@btime Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);            #     146.561 μs, 330.51 KiB
 @btime Zygote.gradient(m -> sum(sin, mapcols(fun, m)), $mat1k);                #  20.018 ms, 3.82 MiB
-@btime Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);             #     354.112 μs
+@btime Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);             #     245.550 μs
 ```
 
 Of course `mapslices()` does things other than columns of matrices. 
 Most of which can be done better with `eachslice()` and `reduce(hcat,...)`, 
-maybe with some thought one could just write gradients for those. 
+maybe with some thought one could just write gradients for those...
 
-Perhaps done. The views of `eachcol()` have quite inefficient gradients, 
-but `collecteachcol()` is efficient:
+Perhaps this is done. The views of `eachcol()` have quite inefficient gradients, 
+because for each `view()` they make a fresh `zero(A)`, but `collecteachcol()` is efficient:
 
 ```julia
 @btime Zygote.gradient(m -> sum(sin, mapcols4(fun, m)), $mat1k);  # 45.616 ms, 49.49 MiB
 @btime Zygote.gradient(m -> sum(sin, mapcols6(fun, m)), $mat1k);  # 18.655 ms,  3.37 MiB
 ```
 
-<!--
 Or for the slice/glue functions in [TensorCast](https://github.com/mcabbott/TensorCast.jl),
 which now does some mapslices things (and will soon do many more) by chaining such functions.
--->
+
+```julia
+using TensorCast
+@cast [i,j] := fun(mat[:,j])[i]                       # same as mapcols
+
+tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]
+Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
+
+@btime tcm($mat1k)                                    # 407.176 μs
+@btime Zygote.gradient(m -> sum(sin, tcm(m)), $mat1k) # 19.086 ms
+
+ten = rand(1:9, 3,10,2)
+@cast zed[i,j,k] := fun(ten[i,:,k])[j]
+Zygote.gradient(m -> sum(sin, @cast zed[i,j,k] := fun(m[i,:,k])[j]  nolazy), ten)[1]
+```
 
 Issues about mapslices:
 * https://github.com/FluxML/Zygote.jl/issues/92

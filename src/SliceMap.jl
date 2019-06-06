@@ -1,7 +1,8 @@
 
 module SliceMap
 
-export MapCols, mapcols
+export MapCols, mapcols, maprows
+
 
 #========== Gradient Macro ==========#
 
@@ -26,6 +27,7 @@ function trackergrad(ex)
   MacroTools.@q(Tracker._forward($(args...)) where $(T...) = $body) |> esc
 end
 
+
 #========== Reverse, Eachslice ==========#
 
 using WeightedArrays
@@ -38,15 +40,18 @@ All further arguments are scalar constants, i.e. they do not get sliced/iterated
 nor are their gradients tracked.
 """
 mapcols(f::Function, M::AbstractMatrix, args...) =
-    reduce(hcat, [ rvec(f(col, args...)) for col in eachcol(M) ])
+    reduce(hcat, [ surevec(f(col, args...)) for col in eachcol(M) ])
 
 mapcols(f::Function, M::WeightedMatrix, args...) =
     Weighted(mapcols(f, M.array, args...), M.weights, M.opt)
 
+surevec(x::Number) = [x] # to allow f vector -> scalar, as mapslices does
+surevec(A) = vec(A)      # to allow f vector -> matrix, by reshaping
+
 mapcols(f::Function, M::TrackedMatrix, args...) = track(mapcols, f, M, args...)
 
-@gradadjoint function mapcols(f::Function, M::AbstractMatrix, args...)
-    res = [ Tracker.forward(x -> rvec(f(x, args...)), col) for col in eachcol(data(M)) ]
+@grad function mapcols(f::Function, M::AbstractMatrix, args...)
+    res = [ Tracker.forward(x -> surevec(f(x, args...)), col) for col in eachcol(data(M)) ]
     fwd = reduce(hcat, data.(first.(res)))
     function back(Δ)
         cols = [ data((last(res[c]))(Δcol)[1]) for (c, Δcol) in enumerate(eachcol(data(Δ))) ]
@@ -56,12 +61,11 @@ mapcols(f::Function, M::TrackedMatrix, args...) = track(mapcols, f, M, args...)
     fwd, back
 end
 
-# @gradadjoint not yet working
-Zygote.@adjoint function mapcols(f::Function, M::Matrix, args...)
-    res = [ Zygote.forward(x -> rvec(f(x, args...)), col) for col in eachcol(data(M)) ]
-    fwd = reduce(hcat, data.(first.(res)))
+@adjoint function mapcols(f::Function, M::Matrix, args...)
+    res = [ Zygote.forward(x -> surevec(f(x, args...)), col) for col in eachcol(M) ]
+    fwd = reduce(hcat, first.(res))
     function back(Δ)
-        cols = [ data((last(res[c]))(Δcol)[1]) for (c, Δcol) in enumerate(eachcol(data(Δ))) ]
+        cols = [ (last(res[c]))(Δcol)[1] for (c, Δcol) in enumerate(eachcol(Δ)) ]
         ∇M = reduce(hcat, cols)
         (nothing, ∇M, map(_->nothing, args)...)
     end
@@ -69,12 +73,14 @@ Zygote.@adjoint function mapcols(f::Function, M::Matrix, args...)
 end
 
 maprows(f::Function, M::AbstractMatrix, args...) =
-    reduce(vcat, [ tvec(f(col, args...)) for col in eachrow(M) ])
+    reduce(vcat, [ surerow(f(col, args...)) for col in eachrow(M) ])
+
+surerow(x) = transpose(surevec(x))
 
 maprows(f::Function, M::TrackedMatrix, args...) = track(maprows, f, M, args...)
 
-@gradadjoint function maprows(f::Function, M::AbstractMatrix, args...)
-    res = [ Tracker.forward(x -> tvec(f(x, args...)), row) for row in eachrow(data(M)) ]
+@grad function maprows(f::Function, M::AbstractMatrix, args...)
+    res = [ Tracker.forward(x -> surerow(f(x, args...)), row) for row in eachrow(data(M)) ]
     fwd = reduce(vcat, data.(first.(res)))
     function back(Δ)
         rows = [ data((last(res[r]))(Δrow)[1]) for (r, Δrow) in enumerate(eachrow(data(Δ))) ]
@@ -87,7 +93,7 @@ end
 
 #========== Forward, Static ==========#
 
-using TensorCast, StaticArrays, WeightedArrays
+using StaticArrays, ForwardDiff, WeightedArrays
 
 struct MapCols{d} end
 
@@ -106,48 +112,72 @@ Takes `m.weights` along for the ride.
 MapCols(f::Function, M::WeightedArrays.MaybeWeightedMatrix, args...) =
     MapCols{size(M,1)}(f, M, args...)
 
-MapCols{d}(f::Function, M::WeightedMatrix, args...)  where {d} =
+MapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
     Weighted(MapCols{d}(f, M.array, args...), M.weights, M.opt)
 
-function MapCols{d}(f::Function, M::Matrix, args...) where {d}
-    @cast A[c]{r:d} := M[r,c] assert
-    reduce(hcat, [ rvec(f(acol, args...)) for acol in A ])
+MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} = _MapCols(f, M, Val(d), args...)
 
-    # TODO: call some function which static-glues if possible...
-    # TensorCast.auto_glue(map(col -> rvec(f(col, args...)), A), (:,*))
-
-    # TODO: can I thread this? Is it even safe to do so?
-    # https://github.com/mohamed82008/KissThreading.jl
+function _MapCols(f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
+    d == size(M,1) || error("expected M with $d columns")
+    # @cast A[c]{r:d} := M[r,c] assert
+    A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(M))
+    B = map(col -> surevec(f(col, args...)), A)
+    reduce(hcat, B)
+    # maybestaticgluecols(B)
 end
 
-rvec(x::Number) = [x] # to allow for f vector -> scalar, as mapslices does
-rvec(x::StaticArray) = vec(Array(x)) # to avoid creating a giant staticarray, as reduce(hcat would otherwise do
-rvec(A) = vec(A) # LinearAlgebra.
+# surevec(x::MArray) = Array(x) # avoid making a huge MArray, ad
 
-tvec(x) = transpose(rvec(x))
+function maybestaticgluecols(B)
+    TB = eltype(B)
+    if TB <: SArray
+        C = collect(reshape(reinterpret(eltype(TB), B),:,length(B)))
+    elseif TB <: MArray
+        C = reduce(hcat, Array.(B))
+    else
+        C = reduce(hcat, B)
+    end
+end
 
-using ForwardDiff
+# surevecS(x::Number) = @SVector [x]
+# surevecS(A) = vec(A) # like surevec
 
-MapCols{d}(f::Function, M::TrackedMatrix, args...) where {d} = track(MapCols, f, M, Val(d), args...)
+_MapCols(f::Function, M::TrackedMatrix, dval, args...) = track(_MapCols, f, M, dval, args...)
 
-@grad function MapCols(f::Function, M::TrackedMatrix, dval::Val{d}, args...) where {d}
+@grad _MapCols(f::Function, M::TrackedMatrix, dval, args...) = ∇MapCols(f, M, dval, args...)
 
-    @cast A[c]{r:d} := M.data[r,c]
+@adjoint _MapCols(f::Function, M::Matrix, dval, args...) = ∇MapCols(f, M, dval, args...)
+
+function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
+
+    d == size(M,1) || error("expected M with $d columns")
+    # @cast A[c]{r:d} := data(M)[r,c]
+    A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))
+
     dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, dval)...), dval))
 
-    C = [ rvec(f(acol .+ dualcol, args...)) for acol in A ]
+    # C = [ surevec(f(col .+ dualcol, args...)) for col in A ]
+    C = map(col -> surevec(f(col .+ dualcol, args...)), A)
 
-    Z = reduce(hcat, [ ForwardDiff.value.(full) for full in C ]) # full is not an SVector here
+    # Z = reduce(hcat, [ ForwardDiff.value.(full) for full in C ])
+    Z = reduce(hcat, map(col -> ForwardDiff.value.(col), C))
 
     function back(ΔZ)
-        ∇M = similar(data(M)) .+ zero(first(data(ΔZ)))
+        # accum = zero(eltype(data(ΔZ)))
+        # ∇M = similar(data(M)) .+ zero(first(data(ΔZ)))
+        ∇M = zeros(eltype(data(ΔZ)), size(M))
         @inbounds for c=1:size(M,2)
             part = ForwardDiff.partials.(C[c])
             for r=1:d
-                ∇M[r,c] = 0
+                # ∇M[r,c] = 0
+                # accum = 0
                 for i=1:size(ΔZ,1)
                     ∇M[r,c] += data(ΔZ)[i,c] * part[i].values[r]
+                    # parti = ForwardDiff.partials(C[c][i])
+                    # ∇M[r,c] += data(ΔZ)[i,c] * parti.values[r]
+                    # accum += data(ΔZ)[i,c] * part[i].values[r]
                 end
+                # ∇M[r,c] = accum
             end
         end
         (nothing, ∇M, nothing, map(_->nothing, args)...)
@@ -156,37 +186,11 @@ MapCols{d}(f::Function, M::TrackedMatrix, args...) where {d} = track(MapCols, f,
     Z, back
 end
 
-# TODO make a _MapCols which always takes Val(d), then unite these
-
-Zygote.@adjoint function MapCols{d}(f::Function, M::Matrix, args...) where {d} # no dval!
-
-    @cast A[c]{r:d} := M[r,c]
-    dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, Val(d))...), Val(d)))
-
-    C = [ rvec(f(acol .+ dualcol, args...)) for acol in A ]
-
-    Z = reduce(hcat, [ ForwardDiff.value.(full) for full in C ])
-
-    function back(ΔZ)
-        ∇M = similar(data(M)) .+ zero(first(data(ΔZ)))
-        @inbounds for c=1:size(M,2)
-            part = ForwardDiff.partials.(C[c])
-            for r=1:d
-                ∇M[r,c] = 0
-                for i=1:size(ΔZ,1)
-                    ∇M[r,c] += data(ΔZ)[i,c] * part[i].values[r]
-                end
-            end
-        end
-        (nothing, ∇M, map(_->nothing, args)...) # changed!
-    end
-
-    Z, back
-end
 
 #========== Gradient for eachslice / reduce ==========#
 
-export gluecol, mapcols2, mapcols4, mapcols5, mapcols6, mapcols7
+export gluecol, collecteachcol
+export mapcols2, mapcols4, mapcols5, mapcols6, mapcols7
 
 gluecol(V::AbstractVector{<:AbstractVector}) = reduce(hcat, V)
 
@@ -235,14 +239,14 @@ end
 # dy = (f = (A = [47.9325 51.3781
 # Which means this works... but uses as much memory as gradient of array of views:
 
-Zygote.@adjoint function eachcol(x::AbstractMatrix)
+#=Zygote.@adjoint function eachcol(x::AbstractMatrix)
     eachcol(x), dy -> (dy.f.A,) #= begin
         @show typeof(dy) dy
         dx = zero(x) .+ 0.0  # zeros(eltype(dy), size(x))
         foreach(copyto!, eachcol(dx), dy)
         (dx,)
     end =#
-end
+end=#
 
 # @adjoint eachcol(x) = eachcol(x), dy -> (dy.f.A,)
 
@@ -254,7 +258,7 @@ end
 
 collecteachcol(x) = collect(eachcol(x))
 
-Zygote.@adjoint function collecteachcol(x)
+@adjoint function collecteachcol(x)
     collecteachcol(x), dy -> begin
         dx = _zero(x)
         foreach(copyto!, collecteachcol(dx), dy)
@@ -273,5 +277,26 @@ end
 #     res = map(f, cols)
 #     reduce(hcat, res)
 # end
+
+# Following a suggestion? Doesn't help.
+# @adjoint Base.collect(x) = collect(x), Δ -> (Δ,)
+
+
+#========== Gradients for TensorCast's functions ==========#
+
+using TensorCast
+
+@adjoint function TensorCast.sliceview(A::AbstractArray, code::Tuple)
+    TensorCast.sliceview(A, code), Δ -> begin
+        dA = _zero(A)
+        foreach(copyto!, TensorCast.sliceview(dA, code), Δ)
+        (dA, nothing)
+    end
+end
+
+@adjoint function TensorCast.red_glue(A::AbstractArray, code::Tuple)
+    TensorCast.red_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
+end
+
 
 end # module

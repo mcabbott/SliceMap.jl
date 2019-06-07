@@ -9,7 +9,6 @@ fun(x) = 2 .+ x.^2
 mapslices(fun, mat, dims=1)
 
 using SliceMap
-
 mapcols(fun, mat)     # eachcol(m)
 MapCols{3}(fun, mat)  # reinterpret(SArray,...)
 
@@ -27,12 +26,15 @@ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 These are a bit faster than `mapslices` too:
 
 ```julia
+using BenchmarkTools
 mat1k = rand(3,1000);
 
-@btime mapslices(fun, $mat1k, dims=1)  # 1.017 ms
-@btime mapcols(fun, $mat1k)            #   399.016 μs
-@btime MapCols{3}(fun, $mat1k)         #    15.564 μs
-@btime MapCols(fun, $mat1k)            #    16.774 μs  without size
+@btime mapreduce(fun, hcat, eachcol($mat1k)) # 1.522 ms
+@btime mapslices(fun, $mat1k, dims=1)        # 1.017 ms
+
+@btime mapcols(fun, $mat1k)                  #   399.016 μs
+@btime MapCols{3}(fun, $mat1k)               #    15.564 μs
+@btime MapCols(fun, $mat1k)                  #    16.774 μs  without size
 
 @btime ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), $mat1k); # 372.705 ms
 @btime Tracker.gradient(m -> sum(sin, mapcols(fun, m)), $mat1k);               #  70.203 ms

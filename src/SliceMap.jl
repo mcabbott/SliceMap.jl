@@ -1,43 +1,25 @@
 
 module SliceMap
 
-export MapCols, mapcols, maprows
+export mapcols, MapCols, maprows, slicemap
 
-
-#========== Gradient Macro ==========#
-
-using MacroTools, Tracker, Zygote
+using MacroTools, Tracker, Zygote, WeightedArrays
 using Tracker: TrackedMatrix, track, @grad, data
 using Zygote: @adjoint, _zero
 
-macro gradadjoint(ex)
-    quote
-        # $(Zygote.gradm(ex)) # this doesn't work
-        $(trackergrad(ex))
-    end
-end
-
-# Copied from https://github.com/FluxML/Tracker.jl/blob/master/src/Tracker.jl#L55
-function trackergrad(ex)
-  @capture(shortdef(ex), (name_(args__) = body_) |
-                         (name_(args__) where {T__} = body_)) || error("Need a function definition")
-  T == nothing && (T = [])
-  isexpr(name, :(::)) || (name = :(::typeof($name)))
-  insert!(args, 1+isexpr(args[1], :parameters) , name)
-  MacroTools.@q(Tracker._forward($(args...)) where $(T...) = $body) |> esc
-end
-
-
 #========== Reverse, Eachslice ==========#
 
-using WeightedArrays
-
 """
-    mapcols(f, m::Matrix, args...) = reduce(hcat, f(c, args...) for c in eachcol(M))
+    mapcols(f, m) ≈ mapreduce(f, hcat, eachcol(m)) ≈ mapslices(f, m, dims=1)
 
-When `m::TrackedMatrix`, it saves the backward function for each slice.
-All further arguments are scalar constants, i.e. they do not get sliced/iterated (unlike `map`)
-nor are their gradients tracked.
+This is a more efficient version of the functions on the right.
+For `f(x::Vector)::Matrix` it reshapes like `mapslices(vec∘f, m, dims=1)`.
+
+It provides a gradient for Tracker and Zygote, saving the backward function for each slice.
+
+Any arguments after the matrix are passed to `f` as scalars, i.e.
+`mapcols(f, m, args...) = reduce(hcat, f(col, args...) for col in eeachcol(m))`.
+They do not get sliced/iterated (unlike `map`), nor are their gradients tracked.
 """
 mapcols(f::Function, M::AbstractMatrix, args...) =
     reduce(hcat, [ surevec(f(col, args...)) for col in eachcol(M) ])
@@ -50,28 +32,24 @@ surevec(A) = vec(A)      # to allow f vector -> matrix, by reshaping
 
 mapcols(f::Function, M::TrackedMatrix, args...) = track(mapcols, f, M, args...)
 
-@grad function mapcols(f::Function, M::AbstractMatrix, args...)
-    res = [ Tracker.forward(x -> surevec(f(x, args...)), col) for col in eachcol(data(M)) ]
-    fwd = reduce(hcat, data.(first.(res)))
-    function back(Δ)
-        cols = [ data((last(res[c]))(Δcol)[1]) for (c, Δcol) in enumerate(eachcol(data(Δ))) ]
-        ∇M = reduce(hcat, cols)
-        (nothing, ∇M, map(_->nothing, args)...)
+@grad mapcols(f::Function, M::AbstractMatrix, args...) =
+    ∇mapcols([ Tracker.forward(x -> surevec(f(x, args...)), col) for col in eachcol(data(M)) ], args)
+
+@adjoint mapcols(f::Function, M::AbstractMatrix, args...) =
+    ∇mapcols([ Zygote.forward(x -> surevec(f(x, args...)), col) for col in eachcol(M) ], args)
+
+function ∇mapcols(forwards, args)
+    reduce(hcat, data.(first.(forwards))), Δ -> begin
+        cols = [ data(last(fwd)(Δcol)[1]) for (fwd, Δcol) in zip(forwards, eachcol(data(Δ))) ]
+        (nothing, reduce(hcat, cols), map(_->nothing, args)...)
     end
-    fwd, back
 end
 
-@adjoint function mapcols(f::Function, M::Matrix, args...)
-    res = [ Zygote.forward(x -> surevec(f(x, args...)), col) for col in eachcol(M) ]
-    fwd = reduce(hcat, first.(res))
-    function back(Δ)
-        cols = [ (last(res[c]))(Δcol)[1] for (c, Δcol) in enumerate(eachcol(Δ)) ]
-        ∇M = reduce(hcat, cols)
-        (nothing, ∇M, map(_->nothing, args)...)
-    end
-    fwd, back
-end
+"""
+    maprows(f, M) ≈ mapslices(f, M, dims=2)
 
+Like `mapcols()` but for rows.
+"""
 maprows(f::Function, M::AbstractMatrix, args...) =
     reduce(vcat, [ surerow(f(col, args...)) for col in eachrow(M) ])
 
@@ -79,15 +57,17 @@ surerow(x) = transpose(surevec(x))
 
 maprows(f::Function, M::TrackedMatrix, args...) = track(maprows, f, M, args...)
 
-@grad function maprows(f::Function, M::AbstractMatrix, args...)
-    res = [ Tracker.forward(x -> surerow(f(x, args...)), row) for row in eachrow(data(M)) ]
-    fwd = reduce(vcat, data.(first.(res)))
-    function back(Δ)
-        rows = [ data((last(res[r]))(Δrow)[1]) for (r, Δrow) in enumerate(eachrow(data(Δ))) ]
-        ∇M = reduce(vcat, rows)
-        (nothing, ∇M, map(_->nothing, args)...)
+@grad maprows(f::Function, M::AbstractMatrix, args...) =
+    ∇maprows([ Tracker.forward(x -> surerow(f(x, args...)), row) for row in eachrow(data(M)) ], args)
+
+@adjoint maprows(f::Function, M::AbstractMatrix, args...) =
+    ∇maprows([ Zygote.forward(x -> surerow(f(x, args...)), row) for row in eachrow(M) ], args)
+
+function ∇maprows(forwards, args)
+    reduce(vcat, data.(first.(forwards))), Δ -> begin
+        rows = [ data(last(fwd)(Δrow)[1]) for (fwd, Δrow) in zip(forwards, eachrow(data(Δ))) ]
+        (nothing, reduce(vcat, rows), map(_->nothing, args)...)
     end
-    fwd, back
 end
 
 
@@ -100,16 +80,12 @@ struct MapCols{d} end
 """
     MapCols{d}(f, m::Matrix, args...)
 
-Expects `f(::SVector{d}, args...)` and maps this over the columns, `d = size(M,1)`.
-Doesn't expect `f` to return a staticarray, just an array.
+Similar to `mapcols(f, m, args...)`, but slices `m` into `SVector{d}` columns.
+Their length `d = size(M,1)` should ideally be provided for type-stability, but is not required.
 
-When `m::TrackedMatrix`, it uses `ForwardDiff` to calculate the gradient of each slice.
-The second point of keeping one type parameter is that the dual numbers needed depend on this.
-
-    MapCols{d}(f, m::Weighted, args...)
-Takes `m.weights` along for the ride.
+The gradient for Tracker and Zygote uses `ForwardDiff` on each slice.
 """
-MapCols(f::Function, M::WeightedArrays.MaybeWeightedMatrix, args...) =
+MapCols(f::Function, M::AT, args...) where {AT<:WeightedArrays.MaybeWeightedMatrix} =
     MapCols{size(M,1)}(f, M, args...)
 
 MapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
@@ -119,7 +95,6 @@ MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} = _MapCols(f, M, V
 
 function _MapCols(f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
     d == size(M,1) || error("expected M with $d columns")
-    # @cast A[c]{r:d} := M[r,c] assert
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(M))
     B = map(col -> surevec(f(col, args...)), A)
     reduce(hcat, B)
@@ -127,6 +102,8 @@ function _MapCols(f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
 end
 
 # surevec(x::MArray) = Array(x) # avoid making a huge MArray, ad
+# surevecS(x::Number) = @SVector [x]
+# surevecS(A) = vec(A) # like surevec
 
 function maybestaticgluecols(B)
     TB = eltype(B)
@@ -139,9 +116,6 @@ function maybestaticgluecols(B)
     end
 end
 
-# surevecS(x::Number) = @SVector [x]
-# surevecS(A) = vec(A) # like surevec
-
 _MapCols(f::Function, M::TrackedMatrix, dval, args...) = track(_MapCols, f, M, dval, args...)
 
 @grad _MapCols(f::Function, M::TrackedMatrix, dval, args...) = ∇MapCols(f, M, dval, args...)
@@ -149,40 +123,26 @@ _MapCols(f::Function, M::TrackedMatrix, dval, args...) = track(_MapCols, f, M, d
 @adjoint _MapCols(f::Function, M::Matrix, dval, args...) = ∇MapCols(f, M, dval, args...)
 
 function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
-
     d == size(M,1) || error("expected M with $d columns")
-    # @cast A[c]{r:d} := data(M)[r,c]
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))
 
     dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, dval)...), dval))
-
-    # C = [ surevec(f(col .+ dualcol, args...)) for col in A ]
     C = map(col -> surevec(f(col .+ dualcol, args...)), A)
 
-    # Z = reduce(hcat, [ ForwardDiff.value.(full) for full in C ])
     Z = reduce(hcat, map(col -> ForwardDiff.value.(col), C))
 
     function back(ΔZ)
-        # accum = zero(eltype(data(ΔZ)))
-        # ∇M = similar(data(M)) .+ zero(first(data(ΔZ)))
         ∇M = zeros(eltype(data(ΔZ)), size(M))
         @inbounds for c=1:size(M,2)
             part = ForwardDiff.partials.(C[c])
             for r=1:d
-                # ∇M[r,c] = 0
-                # accum = 0
                 for i=1:size(ΔZ,1)
                     ∇M[r,c] += data(ΔZ)[i,c] * part[i].values[r]
-                    # parti = ForwardDiff.partials(C[c][i])
-                    # ∇M[r,c] += data(ΔZ)[i,c] * parti.values[r]
-                    # accum += data(ΔZ)[i,c] * part[i].values[r]
                 end
-                # ∇M[r,c] = accum
             end
         end
         (nothing, ∇M, nothing, map(_->nothing, args)...)
     end
-
     Z, back
 end
 
@@ -298,5 +258,20 @@ end
     TensorCast.red_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
 end
 
+@adjoint function TensorCast.copy_glue(A::AbstractArray, code::Tuple)
+    TensorCast.copy_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
+end
+
+"""
+    slicemap(f, A; dims) ≈ mapslices(f, A; dims)
+
+Like `mapcols()`, but for any slice. Gradient is for Zygote only.
+"""
+function slicemap(f::Function, A::AbstractArray{T,N}, args...; dims) where {T,N}
+    code = ntuple(d -> d in dims ? (:) : (*), N)
+    B = TensorCast.sliceview(A, code)
+    C = [ f(slice, args...) for slice in B ]
+    TensorCast.glue(C, code)
+end
 
 end # module

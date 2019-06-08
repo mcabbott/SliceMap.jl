@@ -44,9 +44,9 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 
-    tcm3(mat) = @cast out[_,j] := fun(mat[:,j]) # changed here too
-    @test res ≈ tcm3(mat)
-    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm3(m)), mat)[1]
+    # tcm3(mat) = @cast out[_,j] := fun(mat[:,j]) # changed here too
+    # @test res ≈ tcm3(mat)
+    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm3(m)), mat)[1]
 
 end
 @testset "columns, matrix" begin
@@ -66,9 +66,9 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 
-    tcm4(mat) = @cast out[i⊗i′,j] := fun(mat[:,j])[i,i′] i:3, i′:3 # changed here too
-    @test res ≈ tcm4(mat)
-    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm4(m)), mat)[1]
+    # tcm4(mat) = @cast out[i⊗i′,j] := fun(mat[:,j])[i,i′] i:3, i′:3 # changed here too
+    # @test res ≈ tcm4(mat)
+    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm4(m)), mat)[1]
 
 end
 @testset "rows" begin
@@ -83,9 +83,9 @@ end
     @test grad ≈ Tracker.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
 
-    tcm2(mat) = @cast out[i,j] := fun(mat[i,:])[j]
-    @test res ≈ tcm2(mat)
-    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm2(m)), mat)[1]
+    # tcm2(mat) = @cast out[i,j] := fun(mat[i,:])[j]
+    # @test res ≈ tcm2(mat)
+    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm2(m)), mat)[1]
 
 end
 @testset "slices" begin

@@ -1,6 +1,6 @@
 # SliceMap.jl
 
-It would be nice if [Flux](https://github.com/FluxML/Flux.jl) worked with `mapslices`, 
+It would be nice if [Flux](https://github.com/FluxML/Flux.jl) / [Zygote](https://github.com/FluxML/Zygote.jl) worked with `mapslices`, 
 or with something generalising that. This package has some quick attempts:
 
 ```julia
@@ -23,7 +23,8 @@ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]      # Zygote.forward
 Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 ```
 
-These are a bit faster than `mapslices` too:
+These are a bit faster than `mapslices` too. Although storing all the backward functions, 
+which is what `mapcols` does, seems not to be so quick:
 
 ```julia
 using BenchmarkTools
@@ -47,7 +48,7 @@ Of course `mapslices()` does things other than columns of matrices.
 Most of which can be done better with `eachslice()` and `reduce(hcat,...)`, 
 maybe with some thought one could just write gradients for those...
 
-Perhaps this is done. The views of `eachcol()` have quite inefficient gradients, 
+Perhaps this is done, at least for Zygote. The views of `eachcol()` have quite inefficient gradients, 
 because for each `view()` they make a fresh `zero(A)`, but `collecteachcol()` is efficient:
 
 ```julia
@@ -73,6 +74,25 @@ ten = rand(1:9, 3,10,2)
 Zygote.gradient(m -> sum(sin, @cast zed[i,j,k] := fun(m[i,:,k])[j]  nolazy), ten)[1]
 ```
 
+The function `slicemap(f, A, dims)` uses these slice/glue functions, 
+without having to write index notation. 
+
 Issues about mapslices:
 * https://github.com/FluxML/Zygote.jl/issues/92
 * https://github.com/FluxML/Flux.jl/issues/741
+
+Other packages which define gradients of possible interest:
+* https://github.com/GiggleLiu/LinalgBackwards.jl
+* https://github.com/mcabbott/ArrayAllez.jl
+
+I added some tests: 
+[![Build Status](https://travis-ci.org/mcabbott/SliceMap.jl.svg?branch=master)](https://travis-ci.org/mcabbott/SliceMap.jl)
+
+<!--
+AD packages this could perhaps support, quite the zoo:
+* https://github.com/invenia/Nabla.jl
+* https://github.com/dfdx/Yota.jl
+* https://github.com/denizyuret/AutoGrad.jl
+* https://github.com/Roger-luo/YAAD.jl
+* And perhaps one day, just https://github.com/JuliaDiff/ChainRules.jl
+-->

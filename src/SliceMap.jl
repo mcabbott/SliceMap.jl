@@ -51,22 +51,20 @@ end
 Like `mapcols()` but for rows.
 """
 maprows(f::Function, M::AbstractMatrix, args...) =
-    reduce(vcat, [ surerow(f(col, args...)) for col in eachrow(M) ])
-
-surerow(x) = transpose(surevec(x))
+    reduce(vcat, [ transpose(surevec(f(col, args...))) for col in eachrow(M) ])
 
 maprows(f::Function, M::TrackedMatrix, args...) = track(maprows, f, M, args...)
 
 @grad maprows(f::Function, M::AbstractMatrix, args...) =
-    ∇maprows([ Tracker.forward(x -> surerow(f(x, args...)), row) for row in eachrow(data(M)) ], args)
+    ∇maprows([ Tracker.forward(x -> surevec(f(x, args...)), row) for row in eachrow(data(M)) ], args)
 
 @adjoint maprows(f::Function, M::AbstractMatrix, args...) =
-    ∇maprows([ Zygote.forward(x -> surerow(f(x, args...)), row) for row in eachrow(M) ], args)
+    ∇maprows([ Zygote.forward(x -> surevec(f(x, args...)), row) for row in eachrow(M) ], args)
 
 function ∇maprows(forwards, args)
-    reduce(vcat, data.(first.(forwards))), Δ -> begin
+    reduce(vcat, map(transpose∘data∘first, forwards)), Δ -> begin
         rows = [ data(last(fwd)(Δrow)[1]) for (fwd, Δrow) in zip(forwards, eachrow(data(Δ))) ]
-        (nothing, reduce(vcat, rows), map(_->nothing, args)...)
+        (nothing, reduce(vcat, transpose.(rows)), map(_->nothing, args)...)
     end
 end
 
@@ -265,7 +263,10 @@ end
 """
     slicemap(f, A; dims) ≈ mapslices(f, A; dims)
 
-Like `mapcols()`, but for any slice. Gradient is for Zygote only.
+Like `mapcols()`, but for any slice. The function `f` must preserve shape,
+e.g. `dims=(2,4)` then `f` must map matrices to matrices.
+
+The gradient is for Zygote only.
 """
 function slicemap(f::Function, A::AbstractArray{T,N}, args...; dims) where {T,N}
     code = ntuple(d -> d in dims ? (:) : (*), N)

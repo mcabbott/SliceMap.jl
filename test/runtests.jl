@@ -1,9 +1,102 @@
 
 using SliceMap
 using Test
+using ForwardDiff, Tracker, Zygote, TensorCast
 
-@testset "nothing" begin
+Zygote.refresh()
 
-    @test true
+@testset "columns" begin
+
+    mat = rand(1:9, 3,10)
+    fun(x) = 2 .+ x.^2
+    res = mapslices(fun, mat, dims=1)
+
+    @test res ≈ mapcols(fun, mat)
+    @test res ≈ MapCols{3}(fun, mat)
+
+    grad = ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat)
+
+    @test grad ≈ Tracker.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
+    @test grad ≈ Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+
+    @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
+    @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+
+    tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]
+    @test res ≈ tcm(mat)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
+
+end
+@testset "columns, scalar" begin
+
+    mat = rand(1:9, 3,10)
+    fun(x) = sum(x) # different function!
+    res = mapslices(fun, mat, dims=1)
+
+    @test res ≈ mapcols(fun, mat)
+    @test res ≈ MapCols{3}(fun, mat)
+
+    grad = ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat)
+
+    @test grad ≈ Tracker.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
+    @test grad ≈ Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+
+    @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
+    @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+
+    tcm3(mat) = @cast out[_,j] := fun(mat[:,j]) # changed here too
+    @test res ≈ tcm3(mat)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm3(m)), mat)[1]
+
+end
+@testset "columns, matrix" begin
+
+    mat = rand(1:9, 3,10)
+    fun(x) = x .* x' # different function! vector -> matrix
+    res = mapslices(vec∘fun, mat, dims=1)
+
+    @test res ≈ mapcols(fun, mat)
+    @test res ≈ MapCols{3}(fun, mat)
+
+    grad = ForwardDiff.gradient(m -> sum(sin, mapslices(vec∘fun, m, dims=1)), mat)
+
+    @test grad ≈ Tracker.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
+    @test grad ≈ Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+
+    @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
+    @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+
+    tcm4(mat) = @cast out[i⊗i′,j] := fun(mat[:,j])[i,i′] i:3, i′:3 # changed here too
+    @test res ≈ tcm4(mat)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm4(m)), mat)[1]
+
+end
+@testset "rows" begin
+
+    mat = randn(4,5)
+    fun(x) = 2 .+ x.^2 ./ sum(x)
+
+    res = mapslices(fun, mat, dims=2)
+    @test res ≈ maprows(fun, mat)
+
+    grad = ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=2)), mat)
+    @test grad ≈ Tracker.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
+    @test grad ≈ Zygote.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
+
+    tcm2(mat) = @cast out[i,j] := fun(mat[i,:])[j]
+    @test res ≈ tcm2(mat)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm2(m)), mat)[1]
+
+end
+@testset "slices" begin
+
+    ten = randn(3,4,5,2)
+    fun(x) = sqrt(3) .+ x.^3 ./ (sum(x)^2)
+    res = mapslices(fun, ten, dims=3)
+
+    @test res ≈ slicemap(fun, ten, dims=3)
+
+    grad = ForwardDiff.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)
+    @test grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)[1]
 
 end

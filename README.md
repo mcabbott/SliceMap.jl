@@ -1,7 +1,20 @@
 # SliceMap.jl
 
-It would be nice if [Flux](https://github.com/FluxML/Flux.jl) / [Zygote](https://github.com/FluxML/Zygote.jl) worked with `mapslices`, 
-or with something generalising that. This package has some quick attempts:
+[![Build Status](https://travis-ci.org/mcabbott/SliceMap.jl.svg?branch=master)](https://travis-ci.org/mcabbott/SliceMap.jl)
+
+This package provides some `mapslices`-like functions, 
+with gradients for [Flux](https://github.com/FluxML/Flux.jl) and [Zygote](https://github.com/FluxML/Zygote.jl):
+
+```julia
+mapcols(f, M) ≈ mapreduce(f, hcat, eachcol(M))
+MapCols{d}(f, M) # where d=size(M,1), for StaticArrays
+
+maprows(f, M) ≈ mapreduce(f, vcat, eachrow(M))
+
+slicemap(f, A; dims) ≈ mapslices(f, A, dims)
+```
+
+### An example
 
 ```julia
 mat = rand(1:9, 3,10)
@@ -18,8 +31,7 @@ ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat)
 Tracker.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]     # Tracker.forward per slice
 Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]  # ForwardDiff on slices
 
-# Zygote.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat) # errors
-Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]      # Zygote.forward 
+Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]      # Zygote.forward per slice
 Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 ```
 
@@ -44,20 +56,10 @@ mat1k = rand(3,1000);
 @btime Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);             #     245.550 μs
 ```
 
-Of course `mapslices()` does things other than columns of matrices. 
-Most of which can be done better with `eachslice()` and `reduce(hcat,...)`, 
-maybe with some thought one could just write gradients for those...
-
-Perhaps this is done, at least for Zygote. The views of `eachcol()` have quite inefficient gradients, 
-because for each `view()` they make a fresh `zero(A)`, but `collecteachcol()` is efficient:
-
-```julia
-@btime Zygote.gradient(m -> sum(sin, mapcols4(fun, m)), $mat1k);  # 45.616 ms, 49.49 MiB
-@btime Zygote.gradient(m -> sum(sin, mapcols6(fun, m)), $mat1k);  # 18.655 ms,  3.37 MiB
-```
-
-Or for the slice/glue functions in [TensorCast](https://github.com/mcabbott/TensorCast.jl),
-which now does some mapslices things (and will soon do many more) by chaining such functions.
+It also provides Zygote gradients for the slice/glue functions in 
+[TensorCast](https://github.com/mcabbott/TensorCast.jl),
+which can be used to write many mapslices-like operations.
+(The function `slicemap(f, A, dims)` uses these functions, without having to write index notation.)
 
 ```julia
 using TensorCast
@@ -68,14 +70,9 @@ Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
 
 @btime tcm($mat1k)                                    # 407.176 μs
 @btime Zygote.gradient(m -> sum(sin, tcm(m)), $mat1k) # 19.086 ms
-
-ten = rand(1:9, 3,10,2)
-@cast zed[i,j,k] := fun(ten[i,:,k])[j]
-Zygote.gradient(m -> sum(sin, @cast zed[i,j,k] := fun(m[i,:,k])[j]  nolazy), ten)[1]
 ```
 
-The function `slicemap(f, A, dims)` uses these slice/glue functions, 
-without having to write index notation. 
+### Elsewhere
 
 Issues about mapslices:
 * https://github.com/FluxML/Zygote.jl/issues/92
@@ -85,14 +82,9 @@ Other packages which define gradients of possible interest:
 * https://github.com/GiggleLiu/LinalgBackwards.jl
 * https://github.com/mcabbott/ArrayAllez.jl
 
-I added some tests: 
-[![Build Status](https://travis-ci.org/mcabbott/SliceMap.jl.svg?branch=master)](https://travis-ci.org/mcabbott/SliceMap.jl)
-
-<!--
 AD packages this could perhaps support, quite the zoo:
 * https://github.com/invenia/Nabla.jl
 * https://github.com/dfdx/Yota.jl
 * https://github.com/denizyuret/AutoGrad.jl
 * https://github.com/Roger-luo/YAAD.jl
 * And perhaps one day, just https://github.com/JuliaDiff/ChainRules.jl
--->

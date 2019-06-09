@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+JuliennedArrays = "5cadff95-7770-533d-a838-a1bf817ee6e0"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 Requires = "ae029012-a4dd-5104-9daa-d747884805df"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"

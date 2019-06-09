@@ -14,7 +14,7 @@ maprows(f, M) ≈ mapreduce(f, vcat, eachrow(M))
 slicemap(f, A; dims) ≈ mapslices(f, A, dims)
 ```
 
-### An example
+### Simple example
 
 ```julia
 mat = rand(1:9, 3,10)
@@ -56,27 +56,44 @@ mat1k = rand(3,1000);
 @btime Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), $mat1k);             #     245.550 μs
 ```
 
-It also provides Zygote gradients for the slice/glue functions in 
+### Other packages
+
+This package also provides Zygote gradients for the slice/glue functions in 
 [TensorCast](https://github.com/mcabbott/TensorCast.jl),
 which can be used to write many mapslices-like operations.
 (The function `slicemap(f, A, dims)` uses these functions, without having to write index notation.)
 
 ```julia
 using TensorCast
-@cast [i,j] := fun(mat[:,j])[i]                       # same as mapcols
+@cast [i,j] := fun(mat[:,j])[i]                        # same as mapcols
 
 tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]
 Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
 
-@btime tcm($mat1k)                                    # 407.176 μs
-@btime Zygote.gradient(m -> sum(sin, tcm(m)), $mat1k) # 19.086 ms
+@btime tcm($mat1k)                                     #    407.176 μs
+@btime Zygote.gradient(m -> sum(sin, tcm(m)), $mat1k); # 19.086 ms
+```
+
+Similar gradients work for the Slice/Align functions in 
+[JuliennedArrays](https://github.com/bramtayl/JuliennedArrays.jl),
+so it defines these too:
+
+```julia
+using JuliennedArrays
+jumap(f,m) = Align(map(f, Slices(m, True(), False())), True(), False())
+jumap(fun, mat)                                               # same as mapcols
+Zygote.gradient(m -> sum(sin, jumap(fun, m)), mat)[1]
+
+@btime jumap(fun, $mat1k);                                    #    408.259 μs
+@btime Zygote.gradient(m -> sum(sin, jumap(fun, m)), $mat1k); # 18.638 ms
 ```
 
 ### Elsewhere
 
-Issues about mapslices:
+About mapslices:
 * https://github.com/FluxML/Zygote.jl/issues/92
 * https://github.com/FluxML/Flux.jl/issues/741
+* https://github.com/JuliaLang/julia/issues/29146
 
 Other packages which define gradients of possible interest:
 * https://github.com/GiggleLiu/LinalgBackwards.jl

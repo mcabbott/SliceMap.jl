@@ -14,12 +14,16 @@ using .Zygote: @adjoint, _zero, forward
 
 #===== TensorCast =====#
 
+# @adjoint function TensorCast.sliceview(A::AbstractArray, code::Tuple)
+#     TensorCast.sliceview(A, code), Δ -> begin
+#         dA = _zero(A)
+#         foreach(copyto!, TensorCast.sliceview(dA, code), Δ)
+#         (dA, nothing)
+#     end
+# end
+
 @adjoint function TensorCast.sliceview(A::AbstractArray, code::Tuple)
-    TensorCast.sliceview(A, code), Δ -> begin
-        dA = _zero(A)
-        foreach(copyto!, TensorCast.sliceview(dA, code), Δ)
-        (dA, nothing)
-    end
+    TensorCast.sliceview(A, code), Δ -> (TensorCast.glue(Δ, code), nothing)
 end
 
 @adjoint function TensorCast.red_glue(A::AbstractArray, code::Tuple)
@@ -28,6 +32,16 @@ end
 
 @adjoint function TensorCast.copy_glue(A::AbstractArray, code::Tuple)
     TensorCast.copy_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
+end
+
+#===== JuliennedArrays =====#
+
+@adjoint function Slices(whole, along...)
+    Slices(whole, along...), Δ -> (Align(Δ, along...), map(_->nothing, along)...)
+end
+
+@adjoint function Align(whole, along...)
+    Align(whole, along...), Δ -> (Slices(Δ, along...), map(_->nothing, along)...)
 end
 
 #===== Misc Base =====#

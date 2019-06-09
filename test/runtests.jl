@@ -1,7 +1,7 @@
 
 using SliceMap
 using Test
-using ForwardDiff, Tracker, Zygote, TensorCast
+using ForwardDiff, Tracker, Zygote, TensorCast, JuliennedArrays
 
 Zygote.refresh()
 
@@ -26,8 +26,12 @@ Zygote.refresh()
     @test res ≈ tcm(mat)
     @test grad ≈ Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
 
+    jcols(f,m) = Align(map(f, Slices(m, True(), False())), True(), False())
+    @test res ≈ jcols(fun, mat)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, jcols(fun, m)), mat)[1]
+
 end
-@testset "columns, scalar" begin
+@testset "columns -> scalar" begin
 
     mat = rand(1:9, 3,10)
     fun(x) = sum(x) # different function!
@@ -49,7 +53,7 @@ end
     # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm3(m)), mat)[1]
 
 end
-@testset "columns, matrix" begin
+@testset "columns -> matrix" begin
 
     mat = rand(1:9, 3,10)
     fun(x) = x .* x' # different function! vector -> matrix
@@ -87,16 +91,27 @@ end
     # @test res ≈ tcm2(mat)
     # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm2(m)), mat)[1]
 
+    jrows(f,m) = Align(map(f, Slices(m, False(), True())), False(), True())
+    @test res ≈ jrows(fun, mat)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, jrows(fun, m)), mat)[1]
+
+
 end
-@testset "slices" begin
+@testset "slices of a 4-tensor" begin
 
     ten = randn(3,4,5,2)
-    fun(x) = sqrt(3) .+ x.^3 ./ (sum(x)^2)
+    fun(x::AbstractVector) = sqrt(3) .+ x.^3 ./ (sum(x)^2)
     res = mapslices(fun, ten, dims=3)
 
     @test res ≈ slicemap(fun, ten, dims=3)
 
     grad = ForwardDiff.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)
     @test grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)[1]
+
+    jthree(f,m) = Align(map(f,
+        Slices(m, False(), False(), True(), False())
+        ), False(), False(), True(), False())
+    @test res ≈ jthree(fun, ten)
+    @test grad ≈ Zygote.gradient(m -> sum(sin, jthree(fun, m)), ten)[1]
 
 end

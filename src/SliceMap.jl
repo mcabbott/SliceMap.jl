@@ -3,8 +3,9 @@ module SliceMap
 
 export mapcols, MapCols, maprows, slicemap
 
-using MacroTools, Requires, WeightedArrays, TensorCast, Tracker
+using MacroTools, Requires, WeightedArrays, TensorCast, JuliennedArrays
 
+using Tracker
 using Tracker: TrackedMatrix, track, @grad, data
 
 #========== Reverse, Eachslice ==========#

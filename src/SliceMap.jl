@@ -1,7 +1,7 @@
 
 module SliceMap
 
-export mapcols, MapCols, maprows, slicemap, ThreadMapCols
+export mapcols, MapCols, maprows, slicemap, tmapcols, ThreadMapCols
 
 using MacroTools, Requires, WeightedArrays, TensorCast, JuliennedArrays
 
@@ -22,24 +22,27 @@ Any arguments after the matrix are passed to `f` as scalars, i.e.
 `mapcols(f, m, args...) = reduce(hcat, f(col, args...) for col in eeachcol(m))`.
 They do not get sliced/iterated (unlike `map`), nor are their gradients tracked.
 """
-mapcols(f::Function, M::AbstractMatrix, args...) =
-    reduce(hcat, [ surevec(f(col, args...)) for col in eachcol(M) ])
+mapcols(f::Function, M, args...) = _mapcols(map, f, M, args...)
+tmapcols(f::Function, M, args...) = _mapcols(threadmap, f, M, args...)
 
-mapcols(f::Function, M::WeightedMatrix, args...) =
-    Weighted(mapcols(f, M.array, args...), M.weights, M.opt)
+_mapcols(map::Function, f::Function, M::WeightedMatrix, args...) =
+    Weighted(_mapcols(map, f, M.array, args...), M.weights, M.opt)
+
+_mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
+    reduce(hcat, map(col -> surevec(f(col, args...)), eachcol(M)))
 
 surevec(x::Number) = [x] # to allow f vector -> scalar, as mapslices does
 surevec(A) = vec(A)      # to allow f vector -> matrix, by reshaping
 
-mapcols(f::Function, M::TrackedMatrix, args...) = track(mapcols, f, M, args...)
+_mapcols(map::Function, f::Function, M::TrackedMatrix, args...) = track(_mapcols, map, f, M, args...)
 
-@grad mapcols(f::Function, M::AbstractMatrix, args...) =
-    ∇mapcols([ Tracker.forward(x -> surevec(f(x, args...)), col) for col in eachcol(data(M)) ], args)
+@grad _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
+    ∇mapcols(map, map(col -> Tracker.forward(x -> surevec(f(x, args...)), col), eachcol(data(M))), args)
 
-function ∇mapcols(forwards, args)
-    reduce(hcat, data.(first.(forwards))), Δ -> begin
-        cols = [ data(last(fwd)(Δcol)[1]) for (fwd, Δcol) in zip(forwards, eachcol(data(Δ))) ]
-        (nothing, reduce(hcat, cols), map(_->nothing, args)...)
+function ∇mapcols(bigmap, forwards, args)
+    reduce(hcat, map(data∘first, forwards)), Δ -> begin
+        cols = bigmap((fwd, Δcol) -> data(last(fwd)(Δcol)[1]), forwards, eachcol(data(Δ)))
+        (nothing, nothing, reduce(hcat, cols), map(_->nothing, args)...)
     end
 end
 
@@ -49,16 +52,16 @@ end
 Like `mapcols()` but for rows.
 """
 maprows(f::Function, M::AbstractMatrix, args...) =
-    reduce(vcat, [ transpose(surevec(f(col, args...))) for col in eachrow(M) ])
+    reduce(vcat, map(col -> transpose(surevec(f(col, args...))), eachrow(M)))
 
 maprows(f::Function, M::TrackedMatrix, args...) = track(maprows, f, M, args...)
 
 @grad maprows(f::Function, M::AbstractMatrix, args...) =
-    ∇maprows([ Tracker.forward(x -> surevec(f(x, args...)), row) for row in eachrow(data(M)) ], args)
+    ∇maprows(map(row -> Tracker.forward(x -> surevec(f(x, args...)), row), eachrow(data(M))), args)
 
 function ∇maprows(forwards, args)
     reduce(vcat, map(transpose∘data∘first, forwards)), Δ -> begin
-        rows = [ data(last(fwd)(Δrow)[1]) for (fwd, Δrow) in zip(forwards, eachrow(data(Δ))) ]
+        rows = map((fwd, Δrow) -> data(last(fwd)(Δrow)[1]), forwards, eachrow(data(Δ)))
         (nothing, reduce(vcat, transpose.(rows)), map(_->nothing, args)...)
     end
 end
@@ -67,7 +70,7 @@ end
     slicemap(f, A; dims) ≈ mapslices(f, A; dims)
 
 Like `mapcols()`, but for any slice. The function `f` must preserve shape,
-e.g. `dims=(2,4)` then `f` must map matrices to matrices.
+e.g. if `dims=(2,4)` then `f` must map matrices to matrices.
 
 The gradient is for Zygote only.
 """
@@ -99,28 +102,27 @@ MapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
     Weighted(MapCols{d}(f, M.array, args...), M.weights, M.opt)
 
 MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
-    _MapCols(f, M, Val(d), Val(false), args...)
+    _MapCols(map, f, M, Val(d), args...)
 
-function _MapCols(f::Function, M::Matrix{T}, ::Val{d}, tval::Val, args...) where {T,d}
+function _MapCols(map::Function, f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
     d == size(M,1) || error("expected M with $d columns")
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(M))
-    B = maybethreadmap(col -> surevec(f(col, args...)), A, tval)
+    B = map(col -> surevec(f(col, args...)), A)
     reduce(hcat, B)
 end
 
-_MapCols(f::Function, M::TrackedMatrix, dval, tval, args...) =
-    track(_MapCols, f, M, dval, tval, args...)
+_MapCols(map::Function, f::Function, M::TrackedMatrix, dval, args...) =
+    track(_MapCols, map, f, M, dval, args...)
 
-@grad _MapCols(f::Function, M::TrackedMatrix, dval, tval, args...) =
-    ∇MapCols(f, M, dval, tval, args...)
+@grad _MapCols(map::Function, f::Function, M::TrackedMatrix, dval, args...) =
+    ∇MapCols(map, f, M, dval, args...)
 
-function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, tval::Val, args...) where {T,d}
-
+function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
     d == size(M,1) || error("expected M with $d columns")
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))
 
     dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, dval)...), dval))
-    C = maybethreadmap(col -> surevec(f(col + dualcol, args...)), A, tval)
+    C = bigmap(col -> surevec(f(col + dualcol, args...)), A)
 
     Z = reduce(hcat, map(col -> ForwardDiff.value.(col), C))
 
@@ -134,15 +136,14 @@ function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, tval::Val, 
                 end
             end
         end
-        (nothing, ∇M, nothing, nothing, map(_->nothing, args)...)
+        (nothing, nothing, ∇M, nothing, map(_->nothing, args)...)
     end
     Z, back
 end
 
 #========== Gradients for Zygote ==========#
 
-# @require Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c" begin
-# end
+# @require Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
 
 @init @require Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f" include("zygote.jl")
 
@@ -219,24 +220,35 @@ end
 # What KissThreading does is much more complicated, perhaps worth investigating:
 # https://github.com/mohamed82008/KissThreading.jl/blob/master/src/KissThreading.jl
 
-function threadmap(f::Function, v::AbstractVector)
-    length(v)==0 && error("can't map over empty vector, sorry")
-    out1 = f(first(v))
-    _threadmap(out1, f, v)
+"""
+    threadmap(f, A)
+    threadmap(f, A, B)
+
+Simple version of `map` using a `Threads.@threads` loop;
+only for vectors & only two of them, of nonzero length,
+with all outputs having the same type.
+"""
+function threadmap(f::Function, vw::AbstractVector...)
+    length(first(vw))==0 && error("can't map over empty vector, sorry")
+    length(vw)==2 && (isequal(length.(vw)...) || error("lengths must be equal"))
+    out1 = f(first.(vw)...)
+    _threadmap(out1, f, vw...)
 end
 # NB barrier
-function _threadmap(out1, f, v)
-    out = Vector{typeof(out1)}(undef, length(v))
+function _threadmap(out1, f, vw...)
+    out = Vector{typeof(out1)}(undef, length(first(vw)))
     out[1] = out1
-    Threads.@threads for i=2:length(v)
-        @inbounds out[i] = f(v[i])
+    Threads.@threads for i=2:length(first(vw))
+        @inbounds out[i] = f(getindex.(vw, i)...)
     end
     out
 end
 
-# This switch is fast inside ∇MapCols, after many attempts!
-maybethreadmap(f, v, ::Val{true}) = threadmap(f, v)
-maybethreadmap(f, v, ::Val{false}) = map(f, v)
+# Collect generators to allow indexing
+threadmap(f::Function, v) = threadmap(f, collect(v))
+threadmap(f::Function, v, w) = threadmap(f, collect(v), collect(w))
+threadmap(f::Function, v, w::AbstractVector) = threadmap(f, collect(v), w)
+threadmap(f::Function, v::AbstractVector, w) = threadmap(f, v, collect(w))
 
 struct ThreadMapCols{d} end
 
@@ -252,7 +264,7 @@ ThreadMapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
     Weighted(ThreadMapCols{d}(f, M.array, args...), M.weights, M.opt)
 
 ThreadMapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
-    _MapCols(f, M, Val(d), Val(true), args...)
+    _MapCols(threadmap, f, M, Val(d), args...)
 
 
 end # module

@@ -13,14 +13,17 @@ Zygote.refresh()
 
     @test res ≈ mapcols(fun, mat)
     @test res ≈ MapCols{3}(fun, mat)
+    @test res ≈ ThreadMapCols{3}(fun, mat)
 
     grad = ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=1)), mat)
 
     @test grad ≈ Tracker.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+    @test grad ≈ Tracker.gradient(m -> sum(sin, ThreadMapCols{3}(fun, m)), mat)[1]
 
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
+    @test grad ≈ Zygote.gradient(m -> sum(sin, ThreadMapCols{3}(fun, m)), mat)[1]
 
     tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]
     @test res ≈ tcm(mat)

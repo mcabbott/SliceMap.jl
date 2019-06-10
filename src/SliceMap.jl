@@ -1,7 +1,7 @@
 
 module SliceMap
 
-export mapcols, MapCols, maprows, slicemap
+export mapcols, MapCols, maprows, slicemap, ThreadMapCols
 
 using MacroTools, Requires, WeightedArrays, TensorCast, JuliennedArrays
 
@@ -98,25 +98,29 @@ MapCols(f::Function, M::AT, args...) where {AT<:WeightedArrays.MaybeWeightedMatr
 MapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
     Weighted(MapCols{d}(f, M.array, args...), M.weights, M.opt)
 
-MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} = _MapCols(f, M, Val(d), args...)
+MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
+    _MapCols(f, M, Val(d), Val(false), args...)
 
-function _MapCols(f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
+function _MapCols(f::Function, M::Matrix{T}, ::Val{d}, tval::Val, args...) where {T,d}
     d == size(M,1) || error("expected M with $d columns")
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(M))
-    B = map(col -> surevec(f(col, args...)), A)
+    B = maybethreadmap(col -> surevec(f(col, args...)), A, tval)
     reduce(hcat, B)
 end
 
-_MapCols(f::Function, M::TrackedMatrix, dval, args...) = track(_MapCols, f, M, dval, args...)
+_MapCols(f::Function, M::TrackedMatrix, dval, tval, args...) =
+    track(_MapCols, f, M, dval, tval, args...)
 
-@grad _MapCols(f::Function, M::TrackedMatrix, dval, args...) = ∇MapCols(f, M, dval, args...)
+@grad _MapCols(f::Function, M::TrackedMatrix, dval, tval, args...) =
+    ∇MapCols(f, M, dval, tval, args...)
 
-function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
+function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, tval::Val, args...) where {T,d}
+
     d == size(M,1) || error("expected M with $d columns")
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))
 
     dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, dval)...), dval))
-    C = map(col -> surevec(f(col + dualcol, args...)), A)
+    C = maybethreadmap(col -> surevec(f(col + dualcol, args...)), A, tval)
 
     Z = reduce(hcat, map(col -> ForwardDiff.value.(col), C))
 
@@ -130,7 +134,7 @@ function ∇MapCols(f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) wh
                 end
             end
         end
-        (nothing, ∇M, nothing, map(_->nothing, args)...)
+        (nothing, ∇M, nothing, nothing, map(_->nothing, args)...)
     end
     Z, back
 end
@@ -209,6 +213,46 @@ end
 
 # Following a suggestion? Doesn't help.
 # @adjoint Base.collect(x) = collect(x), Δ -> (Δ,)
+
+#========== Threaded Map ==========#
+
+# What KissThreading does is much more complicated, perhaps worth investigating:
+# https://github.com/mohamed82008/KissThreading.jl/blob/master/src/KissThreading.jl
+
+function threadmap(f::Function, v::AbstractVector)
+    length(v)==0 && error("can't map over empty vector, sorry")
+    out1 = f(first(v))
+    _threadmap(out1, f, v)
+end
+# NB barrier
+function _threadmap(out1, f, v)
+    out = Vector{typeof(out1)}(undef, length(v))
+    out[1] = out1
+    Threads.@threads for i=2:length(v)
+        @inbounds out[i] = f(v[i])
+    end
+    out
+end
+
+# This switch is fast inside ∇MapCols, after many attempts!
+maybethreadmap(f, v, ::Val{true}) = threadmap(f, v)
+maybethreadmap(f, v, ::Val{false}) = map(f, v)
+
+struct ThreadMapCols{d} end
+
+"""
+    ThreadMapCols{d}(f, m::Matrix, args...)
+
+Like `MapCols` but with multi-threading!
+"""
+ThreadMapCols(f::Function, M::AT, args...) where {AT<:WeightedArrays.MaybeWeightedMatrix} =
+    ThreadMapCols{size(M,1)}(f, M, args...)
+
+ThreadMapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
+    Weighted(ThreadMapCols{d}(f, M.array, args...), M.weights, M.opt)
+
+ThreadMapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
+    _MapCols(f, M, Val(d), Val(true), args...)
 
 
 end # module

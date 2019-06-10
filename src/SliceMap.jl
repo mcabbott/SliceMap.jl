@@ -37,9 +37,9 @@ surevec(A) = vec(A)      # to allow f vector -> matrix, by reshaping
 _mapcols(map::Function, f::Function, M::TrackedMatrix, args...) = track(_mapcols, map, f, M, args...)
 
 @grad _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
-    ∇mapcols(map, map(col -> Tracker.forward(x -> surevec(f(x, args...)), col), eachcol(data(M))), args)
+    ∇mapcols(map, map(col -> Tracker.forward(x -> surevec(f(x, args...)), col), eachcol(data(M))), args...)
 
-function ∇mapcols(bigmap, forwards, args)
+function ∇mapcols(bigmap, forwards, args...)
     reduce(hcat, map(data∘first, forwards)), Δ -> begin
         cols = bigmap((fwd, Δcol) -> data(last(fwd)(Δcol)[1]), forwards, eachcol(data(Δ)))
         (nothing, nothing, reduce(hcat, cols), map(_->nothing, args)...)
@@ -220,12 +220,15 @@ end
 # What KissThreading does is much more complicated, perhaps worth investigating:
 # https://github.com/mohamed82008/KissThreading.jl/blob/master/src/KissThreading.jl
 
+# BTW I do the first one because some diffeq maps are infer to ::Any
+# else you could use Core.Compiler.return_type(f, Tuple{eltype(x)})
+
 """
     threadmap(f, A)
     threadmap(f, A, B)
 
 Simple version of `map` using a `Threads.@threads` loop;
-only for vectors & only two of them, of nonzero length,
+only for vectors & really at most two of them, of nonzero length,
 with all outputs having the same type.
 """
 function threadmap(f::Function, vw::AbstractVector...)

@@ -83,9 +83,31 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 
-    # tcm4(mat) = @cast out[i⊗i′,j] := fun(mat[:,j])[i,i′] i:3, i′:3 # changed here too
+    # tcm4(mat) = @cast out[i⊗i′,j] := fun(mat[:,j])[i,i′]  i:3
     # @test res ≈ tcm4(mat)
     # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm4(m)), mat)[1]
+
+end
+@testset "columns w args" begin
+
+    mat = randn(Float32, 3,10)
+    fun(x, s) = 1 .+ x .* s
+    res = mapslices(x -> vec(fun(x,5)), mat, dims=1)
+
+    @test res ≈ mapcols(fun, mat, 5)
+    @test res ≈ MapCols{3}(fun, mat, 5)
+
+    grad = ForwardDiff.gradient(m -> sum(sin, mapslices(x -> vec(fun(x,5)), m, dims=1)), mat)
+
+    @test grad ≈ Tracker.gradient(m -> sum(sin, mapcols(fun, m, 5)), mat)[1]
+    @test grad ≈ Tracker.gradient(m -> sum(sin, MapCols{3}(fun, m, 5)), mat)[1]
+
+    @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m, 5)), mat)[1]
+    @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m, 5)), mat)[1]
+
+    # tcm5(mat) = @cast out[i,j] := fun(mat[:,j], 5)[i]
+    # @test res ≈ tcm5(mat)
+    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm5(m)), mat)[1]
 
 end
 @testset "rows" begin
@@ -107,7 +129,6 @@ end
     jrows(f,m) = Align(map(f, Slices(m, False(), True())), False(), True())
     @test res ≈ jrows(fun, mat)
     @test grad ≈ Zygote.gradient(m -> sum(sin, jrows(fun, m)), mat)[1]
-
 
 end
 @testset "slices of a 4-tensor" begin

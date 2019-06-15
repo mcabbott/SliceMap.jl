@@ -3,7 +3,7 @@ module SliceMap
 
 export mapcols, MapCols, maprows, slicemap, tmapcols, ThreadMapCols
 
-using MacroTools, Requires, WeightedArrays, TensorCast, JuliennedArrays
+using MacroTools, Requires, TensorCast, JuliennedArrays
 
 using Tracker
 using Tracker: TrackedMatrix, track, @grad, data
@@ -24,9 +24,6 @@ They do not get sliced/iterated (unlike `map`), nor are their gradients tracked.
 """
 mapcols(f::Function, M, args...) = _mapcols(map, f, M, args...)
 tmapcols(f::Function, M, args...) = _mapcols(threadmap, f, M, args...)
-
-_mapcols(map::Function, f::Function, M::WeightedMatrix, args...) =
-    Weighted(_mapcols(map, f, M.array, args...), M.weights, M.opt)
 
 _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
     reduce(hcat, map(col -> surevec(f(col, args...)), eachcol(M)))
@@ -83,7 +80,7 @@ end
 
 #========== Forward, Static ==========#
 
-using StaticArrays, ForwardDiff, WeightedArrays
+using StaticArrays, ForwardDiff
 
 struct MapCols{d} end
 
@@ -95,11 +92,8 @@ Their length `d = size(M,1)` should ideally be provided for type-stability, but 
 
 The gradient for Tracker and Zygote uses `ForwardDiff` on each slice.
 """
-MapCols(f::Function, M::AT, args...) where {AT<:WeightedArrays.MaybeWeightedMatrix} =
+MapCols(f::Function, M::AbstractMatrix, args...) =
     MapCols{size(M,1)}(f, M, args...)
-
-MapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
-    Weighted(MapCols{d}(f, M.array, args...), M.weights, M.opt)
 
 MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
     _MapCols(map, f, M, Val(d), args...)
@@ -220,7 +214,7 @@ end
 # What KissThreading does is much more complicated, perhaps worth investigating:
 # https://github.com/mohamed82008/KissThreading.jl/blob/master/src/KissThreading.jl
 
-# BTW I do the first one because some diffeq maps are infer to ::Any
+# BTW I do the first one because some diffeq maps infer to ::Any,
 # else you could use Core.Compiler.return_type(f, Tuple{eltype(x)})
 
 """
@@ -260,11 +254,8 @@ struct ThreadMapCols{d} end
 
 Like `MapCols` but with multi-threading!
 """
-ThreadMapCols(f::Function, M::AT, args...) where {AT<:WeightedArrays.MaybeWeightedMatrix} =
+ThreadMapCols(f::Function, M::AbstractMatrix, args...) =
     ThreadMapCols{size(M,1)}(f, M, args...)
-
-ThreadMapCols{d}(f::Function, M::WeightedMatrix, args...) where {d} =
-    Weighted(ThreadMapCols{d}(f, M.array, args...), M.weights, M.opt)
 
 ThreadMapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
     _MapCols(threadmap, f, M, Val(d), args...)

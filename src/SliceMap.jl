@@ -113,6 +113,8 @@ _MapCols(map::Function, f::Function, M::TrackedMatrix, dval, args...) =
 
 function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
     d == size(M,1) || error("expected M with $d columns")
+    k = size(M,2)
+
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))
 
     dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, dval)...), dval))
@@ -121,8 +123,9 @@ function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::V
     Z = reduce(hcat, map(col -> ForwardDiff.value.(col), C))
 
     function back(ΔZ)
-        ∇M = zeros(eltype(data(ΔZ)), size(M))
-        @inbounds for c=1:size(M,2)
+        S = promote_type(T, eltype(data(ΔZ)))
+        ∇M = zeros(S, size(M))
+        @inbounds for c=1:k
             part = ForwardDiff.partials.(C[c])
             for r=1:d
                 for i=1:size(ΔZ,1)

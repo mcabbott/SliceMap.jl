@@ -37,15 +37,6 @@ using .Zygote: @adjoint, _zero, forward
 @adjoint Base.reduce(::typeof(hcat), V::AbstractVector{<:AbstractVector}) =
     reduce(hcat, V), dV -> (nothing, collect(eachcol(dV)),)
 
-# https://github.com/FluxML/Zygote.jl/pull/219
-@adjoint function view(x::AbstractArray, inds...; kwargs...)
-    view(x, inds...; kwargs...), dy -> begin
-        dx = _zero(x)
-        copyto!(view(dx, inds...; kwargs...), dy)
-        (dx, map(_->nothing, inds)...)
-    end
-end
-
 #===== Misc experiments =====#
 
 @adjoint gluecol(V::AbstractVector) =

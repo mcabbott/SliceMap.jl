@@ -99,7 +99,7 @@ MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
     _MapCols(map, f, M, Val(d), args...)
 
 function _MapCols(map::Function, f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
-    d == size(M,1) || error("expected M with $d columns")
+    d == size(M,1) || error("expected M with $d rows")
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(M))
     B = map(col -> surevec(f(col, args...)), A)
     reduce(hcat, B)
@@ -112,7 +112,7 @@ _MapCols(map::Function, f::Function, M::TrackedMatrix, dval, args...) =
     ∇MapCols(map, f, M, dval, args...)
 
 function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
-    d == size(M,1) || error("expected M with $d columns")
+    d == size(M,1) || error("expected M with $d rows")
     k = size(M,2)
 
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))

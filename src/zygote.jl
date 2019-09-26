@@ -1,4 +1,7 @@
 
+# Note to self -- ZygoteRules doesn't have forward, only @adjoint, so it's no help.
+# Later: it now has pullback, so that should work? Once registered... all copied in.
+
 using .Zygote
 using .Zygote: @adjoint, _zero, forward
 

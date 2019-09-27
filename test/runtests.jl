@@ -140,7 +140,7 @@ end
     @test res ≈ slicemap(fun, ten, dims=3)
 
     grad = ForwardDiff.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)
-    @test_broken grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)[1]
+    @test grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)[1]
 
     jthree(f,m) = Align(map(f,
         Slices(m, False(), False(), True(), False())

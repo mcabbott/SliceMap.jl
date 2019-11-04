@@ -8,6 +8,9 @@ using MacroTools, Requires, TensorCast, JuliennedArrays
 using Tracker
 using Tracker: TrackedMatrix, track, @grad, data
 
+using ZygoteRules
+using ZygoteRules: pullback, @adjoint
+
 #========== Reverse, Eachslice ==========#
 
 """
@@ -36,6 +39,9 @@ _mapcols(map::Function, f::Function, M::TrackedMatrix, args...) = track(_mapcols
 @grad _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
     ∇mapcols(map, map(col -> Tracker.forward(x -> surevec(f(x, args...)), col), eachcol(data(M))), args...)
 
+@adjoint _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
+    ∇mapcols(map, map(col -> ZygoteRules.pullback(x -> surevec(f(x, args...)), col), eachcol(M)), args)
+
 function ∇mapcols(bigmap, forwards, args...)
     reduce(hcat, map(data∘first, forwards)), Δ -> begin
         cols = bigmap((fwd, Δcol) -> data(last(fwd)(Δcol)[1]), forwards, eachcol(data(Δ)))
@@ -55,6 +61,9 @@ maprows(f::Function, M::TrackedMatrix, args...) = track(maprows, f, M, args...)
 
 @grad maprows(f::Function, M::AbstractMatrix, args...) =
     ∇maprows(map(row -> Tracker.forward(x -> surevec(f(x, args...)), row), eachrow(data(M))), args)
+
+@adjoint maprows(f::Function, M::AbstractMatrix, args...) =
+    ∇maprows(map(row -> ZygoteRules.pullback(x -> surevec(f(x, args...)), row), eachrow(M)), args)
 
 function ∇maprows(forwards, args)
     reduce(vcat, map(transpose∘data∘first, forwards)), Δ -> begin
@@ -77,6 +86,7 @@ function slicemap(f::Function, A::AbstractArray{T,N}, args...; dims) where {T,N}
     C = [ f(slice, args...) for slice in B ]
     TensorCast.glue(C, code)
 end
+# TODO switch to JuliennedArrays, then rm TensorCast dep
 
 #========== Forward, Static ==========#
 
@@ -111,6 +121,9 @@ _MapCols(map::Function, f::Function, M::TrackedMatrix, dval, args...) =
 @grad _MapCols(map::Function, f::Function, M::TrackedMatrix, dval, args...) =
     ∇MapCols(map, f, M, dval, args...)
 
+@adjoint _MapCols(map::Function, f::Function, M::Matrix, dval, args...) =
+    ∇MapCols(map, f, M, dval, args...)
+
 function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::Val{d}, args...) where {T,d}
     d == size(M,1) || error("expected M with $d rows")
     k = size(M,2)
@@ -142,7 +155,34 @@ end
 
 # @require Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
 
-@init @require Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f" include("zygote.jl")
+# @init @require Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f" include("zygote.jl")
+# Now using ZygoteRules instead, mapcols etc above.
+
+#= TensorCast =#
+# These could move there, TODO
+
+@adjoint TensorCast.sliceview(A::AbstractArray, code::Tuple) =
+    TensorCast.sliceview(A, code), Δ -> (TensorCast.glue(Δ, code), nothing)
+
+@adjoint TensorCast.red_glue(A::AbstractArray, code::Tuple) =
+    TensorCast.red_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
+
+@adjoint TensorCast.copy_glue(A::AbstractArray, code::Tuple) =
+    TensorCast.copy_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
+
+#= JuliennedArrays =#
+
+@adjoint JuliennedArrays.Slices(whole, along...) =
+    Slices(whole, along...), Δ -> (Align(Δ, along...), map(_->nothing, along)...)
+
+@adjoint JuliennedArrays.Align(whole, along...) =
+    Align(whole, along...), Δ -> (Slices(Δ, along...), map(_->nothing, along)...)
+
+#= Base =#
+
+@adjoint Base.reduce(::typeof(hcat), V::AbstractVector{<:AbstractVector}) =
+    reduce(hcat, V), dV -> (nothing, collect(eachcol(dV)),)
+
 
 #========== Experimenting with gradients for for eachslice / reduce ==========#
 
@@ -158,6 +198,9 @@ gluecol(V::AbstractVector{<:TrackedVector}) = track(gluecol, V)
     gluecol(data.(V)), ΔM -> (collect(eachcol(data(ΔM))),) # doesn't work
 end
 =#
+
+@adjoint gluecol(V::AbstractVector) =
+    gluecol(V), ΔM -> (collect(eachcol(ΔM)),) # does work!
 
 function mapcols2(f, A)
     cols = [A[:,c] for c=1:size(A,2)]
@@ -196,6 +239,14 @@ function mapcols5(f, A)
 end
 
 collecteachcol(x) = collect(eachcol(x))
+
+@adjoint function collecteachcol(x)
+    collecteachcol(x), dy -> begin
+        dx = _zero(x) # _zero is not in ZygoteRules, TODO
+        foreach(copyto!, collecteachcol(dx), dy)
+        (dx,)
+    end
+end
 
 function mapcols6(f, A)
     cols = collecteachcol(A)

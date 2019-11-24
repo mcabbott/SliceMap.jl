@@ -1,7 +1,7 @@
 
 using SliceMap
 using Test
-using ForwardDiff, Tracker, Zygote, TensorCast, JuliennedArrays
+using ForwardDiff, Tracker, Zygote, JuliennedArrays
 
 Zygote.refresh()
 
@@ -35,10 +35,6 @@ Zygote.refresh()
     @test grad ≈ Zygote.gradient(m -> sum(sin, tmapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, ThreadMapCols{3}(fun, m)), mat)[1]
 
-    tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]
-    @test res ≈ tcm(mat)
-    @test grad ≈ Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
-
     jcols(f,m) = Align(map(f, Slices(m, True(), False())), True(), False())
     @test res ≈ jcols(fun, mat)
     @test grad ≈ Zygote.gradient(m -> sum(sin, jcols(fun, m)), mat)[1]
@@ -61,10 +57,6 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
 
-    # tcm3(mat) = @cast out[_,j] := fun(mat[:,j]) # changed here too
-    # @test res ≈ tcm3(mat)
-    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm3(m)), mat)[1]
-
 end
 @testset "columns -> matrix" begin
 
@@ -82,10 +74,6 @@ end
 
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m)), mat)[1]
-
-    # tcm4(mat) = @cast out[i⊗i′,j] := fun(mat[:,j])[i,i′]  i:3
-    # @test res ≈ tcm4(mat)
-    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm4(m)), mat)[1]
 
 end
 @testset "columns w args" begin
@@ -105,10 +93,6 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, mapcols(fun, m, 5)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, MapCols{3}(fun, m, 5)), mat)[1]
 
-    # tcm5(mat) = @cast out[i,j] := fun(mat[:,j], 5)[i]
-    # @test res ≈ tcm5(mat)
-    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm5(m)), mat)[1]
-
 end
 @testset "rows" begin
 
@@ -121,10 +105,6 @@ end
     grad = ForwardDiff.gradient(m -> sum(sin, mapslices(fun, m, dims=2)), mat)
     @test grad ≈ Tracker.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
-
-    # tcm2(mat) = @cast out[i,j] := fun(mat[i,:])[j]
-    # @test res ≈ tcm2(mat)
-    # @test grad ≈ Zygote.gradient(m -> sum(sin, tcm2(m)), mat)[1]
 
     jrows(f,m) = Align(map(f, Slices(m, False(), True())), False(), True())
     @test res ≈ jrows(fun, mat)

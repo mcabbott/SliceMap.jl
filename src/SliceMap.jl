@@ -3,7 +3,7 @@ module SliceMap
 
 export mapcols, MapCols, maprows, slicemap, tmapcols, ThreadMapCols
 
-using MacroTools, TensorCast, JuliennedArrays
+using MacroTools, JuliennedArrays
 
 using Tracker
 using Tracker: TrackedMatrix, track, @grad, data
@@ -81,12 +81,11 @@ e.g. if `dims=(2,4)` then `f` must map matrices to matrices.
 The gradient is for Zygote only.
 """
 function slicemap(f::Function, A::AbstractArray{T,N}, args...; dims) where {T,N}
-    code = ntuple(d -> d in dims ? (:) : (*), N)
-    B = TensorCast.sliceview(A, code)
+    code = ntuple(d -> d in dims ? True() : False(), N)
+    B = JuliennedArrays.Slices(A, code...)
     C = [ f(slice, args...) for slice in B ]
-    TensorCast.glue(C, code)
+    JuliennedArrays.Align(C, code...)
 end
-# TODO switch to JuliennedArrays, then rm TensorCast dep
 
 #========== Forward, Static ==========#
 
@@ -152,23 +151,6 @@ function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::V
 end
 
 #========== Gradients for Zygote ==========#
-
-# @require Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
-
-# @init @require Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f" include("zygote.jl")
-# Now using ZygoteRules instead, mapcols etc above.
-
-#= TensorCast =#
-# These could move there, TODO
-
-@adjoint TensorCast.sliceview(A::AbstractArray, code::Tuple) =
-    TensorCast.sliceview(A, code), Δ -> (TensorCast.glue(Δ, code), nothing)
-
-@adjoint TensorCast.red_glue(A::AbstractArray, code::Tuple) =
-    TensorCast.red_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
-
-@adjoint TensorCast.copy_glue(A::AbstractArray, code::Tuple) =
-    TensorCast.copy_glue(A, code), Δ -> (TensorCast.sliceview(Δ, code), nothing)
 
 #= JuliennedArrays =#
 

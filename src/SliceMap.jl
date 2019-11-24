@@ -3,7 +3,7 @@ module SliceMap
 
 export mapcols, MapCols, maprows, slicemap, tmapcols, ThreadMapCols
 
-using MacroTools, JuliennedArrays
+using JuliennedArrays
 
 using Tracker
 using Tracker: TrackedMatrix, track, @grad, data

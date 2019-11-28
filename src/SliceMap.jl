@@ -6,7 +6,7 @@ export mapcols, MapCols, maprows, slicemap, tmapcols, ThreadMapCols
 using JuliennedArrays
 
 using Tracker
-using Tracker: TrackedMatrix, track, @grad, data
+using Tracker: TrackedReal, TrackedMatrix, track, @grad, data
 
 using ZygoteRules
 using ZygoteRules: pullback, @adjoint
@@ -29,18 +29,15 @@ mapcols(f::Function, M, args...) = _mapcols(map, f, M, args...)
 tmapcols(f::Function, M, args...) = _mapcols(threadmap, f, M, args...)
 
 _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
-    reduce(hcat, map(col -> surevec(f(col, args...)), eachcol(M)))
-
-surevec(x::Number) = [x] # to allow f vector -> scalar, as mapslices does
-surevec(A) = vec(A)      # to allow f vector -> matrix, by reshaping
+    reduce(hcat, map(col -> surevec(f(col, args...), M), eachcol(M)))
 
 _mapcols(map::Function, f::Function, M::TrackedMatrix, args...) = track(_mapcols, map, f, M, args...)
 
 @grad _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
-    ∇mapcols(map, map(col -> Tracker.forward(x -> surevec(f(x, args...)), col), eachcol(data(M))), args...)
+    ∇mapcols(map, map(col -> Tracker.forward(x -> surevec(f(x, args...), M), col), eachcol(data(M))), args...)
 
 @adjoint _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
-    ∇mapcols(map, map(col -> ZygoteRules.pullback(x -> surevec(f(x, args...)), col), eachcol(M)), args)
+    ∇mapcols(map, map(col -> ZygoteRules.pullback(x -> surevec(f(x, args...), M), col), eachcol(M)), args)
 
 function ∇mapcols(bigmap, forwards, args...)
     reduce(hcat, map(data∘first, forwards)), Δ -> begin
@@ -49,21 +46,29 @@ function ∇mapcols(bigmap, forwards, args...)
     end
 end
 
+surevec(A::AbstractArray, M) = vec(A)  # to allow f vector -> matrix, by reshaping
+surevec(x::Number, M) = _veclike(x, M) # to allow f vector -> scalar, as mapslices does
+
+_veclike(x::T, M) where {T} = fill!(similar(M, T, 1), x) # use similar to preserve CuArrays, #4
+_veclike(x::TrackedReal, M) = track(_veclike, x, M)
+@grad _veclike(x, M) = _veclike(data(x), M), Δ -> (first(Δ), nothing)
+@adjoint _veclike(x, M) = _veclike(x, M), Δ -> (first(Δ), nothing)
+
 """
     maprows(f, M) ≈ mapslices(f, M, dims=2)
 
 Like `mapcols()` but for rows.
 """
 maprows(f::Function, M::AbstractMatrix, args...) =
-    reduce(vcat, map(col -> transpose(surevec(f(col, args...))), eachrow(M)))
+    reduce(vcat, map(col -> transpose(surevec(f(col, args...), M)), eachrow(M)))
 
 maprows(f::Function, M::TrackedMatrix, args...) = track(maprows, f, M, args...)
 
 @grad maprows(f::Function, M::AbstractMatrix, args...) =
-    ∇maprows(map(row -> Tracker.forward(x -> surevec(f(x, args...)), row), eachrow(data(M))), args)
+    ∇maprows(map(row -> Tracker.forward(x -> surevec(f(x, args...), M), row), eachrow(data(M))), args)
 
 @adjoint maprows(f::Function, M::AbstractMatrix, args...) =
-    ∇maprows(map(row -> ZygoteRules.pullback(x -> surevec(f(x, args...)), row), eachrow(M)), args)
+    ∇maprows(map(row -> ZygoteRules.pullback(x -> surevec(f(x, args...), M), row), eachrow(M)), args)
 
 function ∇maprows(forwards, args)
     reduce(vcat, map(transpose∘data∘first, forwards)), Δ -> begin
@@ -110,7 +115,7 @@ MapCols{d}(f::Function, M::AbstractMatrix, args...) where {d} =
 function _MapCols(map::Function, f::Function, M::Matrix{T}, ::Val{d}, args...) where {T,d}
     d == size(M,1) || error("expected M with $d rows")
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(M))
-    B = map(col -> surevec(f(col, args...)), A)
+    B = map(col -> surevec(f(col, args...), M), A)
     reduce(hcat, B)
 end
 
@@ -130,7 +135,7 @@ function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::V
     A = reinterpret(SArray{Tuple{d}, T, 1, d}, vec(data(M)))
 
     dualcol = SVector(ntuple(j->ForwardDiff.Dual(0, ntuple(i->i==j ? 1 : 0, dval)...), dval))
-    C = bigmap(col -> surevec(f(col + dualcol, args...)), A)
+    C = bigmap(col -> surevec(f(col + dualcol, args...), M), A)
 
     Z = reduce(hcat, map(col -> ForwardDiff.value.(col), C))
 

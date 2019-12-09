@@ -2,8 +2,8 @@
 
 [![Build Status](https://travis-ci.org/mcabbott/SliceMap.jl.svg?branch=master)](https://travis-ci.org/mcabbott/SliceMap.jl)
 
-This package provides some `mapslices`-like functions, 
-with gradients for [Flux](https://github.com/FluxML/Flux.jl) and [Zygote](https://github.com/FluxML/Zygote.jl):
+This package provides some `mapslices`-like functions, with gradients defined for 
+[Tracker](https://github.com/FluxML/Tracker.jl) and [Zygote](https://github.com/FluxML/Zygote.jl):
 
 ```julia
 mapcols(f, M) ≈ mapreduce(f, hcat, eachcol(M))
@@ -22,7 +22,6 @@ For small slices, this will often be much faster, with or without gradients.
 
 The package also defines Zygote gradients for the Slice/Align functions in 
 [JuliennedArrays](https://github.com/bramtayl/JuliennedArrays.jl), 
-and the slice/glue functions in [TensorCast](https://github.com/mcabbott/TensorCast.jl), 
-both of which are good ways to roll-your-own `mapslices`-like things.
+which is a good ways to roll-your-own `mapslices`-like thing.
 
 There are more details & examples at [docs/intro.md](docs/intro.md). 

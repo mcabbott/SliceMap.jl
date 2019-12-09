@@ -44,17 +44,34 @@ mat1k = rand(3,1000);
 @btime Zygote.gradient(m -> sum(MapCols{3}(fun, m)), $mat1k);             #      28.229 μs, 164.63 KiB
 ```
 
-For such a simple function, timing `sum(sin, MapCols{3}(fun, m))` takes 3 to 10 times longer! 
+On recent versions of Julia, `mapcols` has become much faster, 5-10 times. 
 
 ## Other packages
 
-This package also provides Zygote gradients for the slice/glue functions in 
-[TensorCast](https://github.com/mcabbott/TensorCast.jl),
-which can be used to write many mapslices-like operations.
-(The function `slicemap(f, A, dims)` uses these functions, without having to write index notation.)
+This package also provides Zygote gradients for the Slice/Align functions in 
+[JuliennedArrays](https://github.com/bramtayl/JuliennedArrays.jl),
+which can be used to write many mapslices-like operations:
 
 ```julia
-using TensorCast
+using JuliennedArrays
+jumap(f,m) = Align(map(f, Slices(m, True(), False())), True(), False())
+jumap1(f,m) = Align(map(f, Slices(m, 1)), 1)
+jumap(fun, mat)                                          # same as mapcols
+jumap1(fun, mat)
+Zygote.gradient(m -> sum(sin, jumap(fun, m)), mat)[1]
+
+@btime jumap(fun, $mat1k);                               #     44.823 μs
+@btime jumap1(fun, $mat1k);                              #     11.805 μs, really?
+@btime Zygote.gradient(m -> sum(jumap(fun, m)), $mat1k); # 26.110 ms
+@btime Zygote.gradient(m -> sum(jumap1(fun, m)), $mat1k) #    412.904 μs, really?
+```
+
+It used to do the same thing for the slice/glue functions in 
+[TensorCast](https://github.com/mcabbott/TensorCast.jl),
+but but that should soon be part of that package:
+
+```julia
+using TensorCast#two
 @cast [i,j] := fun(mat[:,j])[i]                   # same as mapcols
 
 tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]
@@ -63,22 +80,6 @@ Zygote.gradient(m -> sum(sin, tcm(m)), mat)[1]
 @btime tcm($mat1k)                                #    427.907 μs
 @btime Zygote.gradient(m -> sum(tcm(m)), $mat1k); # 18.358 ms
 ```
-
-Similar gradients work for the Slice/Align functions in 
-[JuliennedArrays](https://github.com/bramtayl/JuliennedArrays.jl),
-so it defines these too:
-
-```julia
-using JuliennedArrays
-jumap(f,m) = Align(map(f, Slices(m, True(), False())), True(), False())
-jumap(fun, mat)                                          # same as mapcols
-Zygote.gradient(m -> sum(sin, jumap(fun, m)), mat)[1]
-
-@btime jumap(fun, $mat1k);                               #    421.061 μs
-@btime Zygote.gradient(m -> sum(jumap(fun, m)), $mat1k); # 18.383 ms
-```
-
-That's a 2-line gradient definition, so borrowing it may be easier than depending on this package. 
 
 The original purpose of `MapCols`, with ForwardDiff on slices, was that this works well when
 the function being mapped integrates some differential equation. 
@@ -128,9 +129,3 @@ Other packages which define gradients of possible interest:
 * https://github.com/GiggleLiu/LinalgBackwards.jl
 * https://github.com/mcabbott/ArrayAllez.jl
 
-Differentiation packages this could perhaps support, quite the zoo:
-* https://github.com/dfdx/Yota.jl
-* https://github.com/invenia/Nabla.jl
-* https://github.com/denizyuret/AutoGrad.jl
-* https://github.com/Roger-luo/YAAD.jl
-* And perhaps one day, just https://github.com/JuliaDiff/ChainRules.jl

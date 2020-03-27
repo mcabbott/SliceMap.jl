@@ -133,3 +133,27 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, j3(fun, m)), ten)[1]
 
 end
+@testset "gradient of the function" begin
+
+    struct F W end
+    (f::F)(x) = f.W * x # toy version of e.g. Flux.Dense
+    w = rand(3,2)
+    x = rand(2,5)
+    gradx = ForwardDiff.gradient(x -> sum(mapslices(F(w), x, dims=1)), x)
+    gradw = ForwardDiff.gradient(w -> sum(mapslices(F(w), x, dims=1)), w)
+
+    wp = Tracker.param(w)
+    xp = Tracker.param(x)
+    Tracker.back!(sum(mapcols(F(wp), xp)))
+    @test Tracker.grad(xp) ≈ gradx
+    @test_broken Tracker.grad(wp) ≈ gradw # zero
+
+    grad_mapcols = Zygote.gradient(() -> sum(mapcols(F(w), x)), Zygote.Params([w,x]))
+    @test grad_mapcols[x] ≈ gradx
+    @test_broken grad_mapcols[w] ≈ gradw # grad_mapcols[w] === nothing
+
+    grad_slicemap = Zygote.gradient(() -> sum(slicemap(F(w), x, dims=1)), Zygote.Params([w,x]))
+    @test grad_slicemap[x] ≈ gradx
+    @test_broken grad_slicemap[w] ≈ gradw # wrong numbers
+
+end

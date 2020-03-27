@@ -26,8 +26,8 @@ Any arguments after the matrix are passed to `f` as scalars, i.e.
 `mapcols(f, m, args...) = reduce(hcat, f(col, args...) for col in eeachcol(m))`.
 They do not get sliced/iterated (unlike `map`), nor are their gradients tracked.
 """
-mapcols(f::Function, M, args...) = _mapcols(map, f, M, args...)
-tmapcols(f::Function, M, args...) = _mapcols(threadmap, f, M, args...)
+mapcols(f::Function, M, args...; kw...) = _mapcols(map, f, M, args...; kw...)
+tmapcols(f::Function, M, args...; kw...) = _mapcols(threadmap, f, M, args...; kw...)
 
 function _mapcols(map::Function, f::Function, M::AbstractMatrix, args...)
     res = map(col -> _vec(f(col, args...)), eachcol(M))
@@ -163,6 +163,18 @@ function ∇MapCols(bigmap::Function, f::Function, M::AbstractMatrix{T}, dval::V
     end
     Z, back
 end
+
+#========== Reshaped ==========#
+# https://github.com/mcabbott/SliceMap.jl/issues/3
+
+function _mapcols(map::Function, f::Function, A::AbstractArray, args...; dims = ntuple(d->d, ndims(A)-1))
+    d = length(dims)
+    dims == 1:d || throw(ArgumentError("mapcols(f, A; dims) only works with dims = 1:3 etc, got dims = $dims"))
+    B = reshape(A, prod(), prod())
+    C = _mapcols(map, f, B, args...)
+    D = reshape(C, size(), size()) # actually, what is the output shape? Perhaps no kw...
+end
+
 
 #========== Gradients for Zygote ==========#
 

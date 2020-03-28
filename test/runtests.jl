@@ -155,5 +155,6 @@ end
     grad_slicemap = Zygote.gradient(() -> sum(slicemap(F(w), x, dims=1)), Zygote.Params([w,x]))
     @test grad_slicemap[x] ≈ gradx
     @test_broken grad_slicemap[w] ≈ gradw # wrong numbers
+    @test gradw ≈ Zygote.gradient(w -> sum(slicemap(F(w), x, dims=1)), w)[1]
 
 end

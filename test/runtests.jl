@@ -133,3 +133,37 @@ end
     @test grad ≈ Zygote.gradient(m -> sum(sin, j3(fun, m)), ten)[1]
 
 end
+@testset "gradient of the function" begin
+
+    struct F W end
+    (f::F)(x) = f.W * x # toy version of e.g. Flux.Dense
+    w = rand(3,2)
+    x = rand(2,5)
+    gradx = ForwardDiff.gradient(x -> sum(mapslices(F(w), x, dims=1)), x)
+    gradw = ForwardDiff.gradient(w -> sum(mapslices(F(w), x, dims=1)), w)
+
+    wp = Tracker.param(w)
+    xp = Tracker.param(x)
+    Tracker.back!(sum(mapcols(F(wp), xp)))
+    @test Tracker.grad(xp) ≈ gradx
+    @test Tracker.grad(wp) == 0 .* gradw # bug or a feature?
+
+    # fp = F(wp)
+    # wp.grad .= 0; xp.grad .= 0;
+    # Tracker.back!(sum(mapcols(fp, xp)))
+    # @test Tracker.grad(xp) ≈ gradx
+    # @test_broken Tracker.grad(wp) ≈ gradw # zero
+
+    f = F(w)
+    grad_mapcols = Zygote.gradient(() -> sum(mapcols(f, x)), Zygote.Params([w,x]))
+    @test grad_mapcols[x] ≈ gradx
+    @test grad_mapcols[w] == nothing # bug or a feature?
+
+    grad_slicemap = Zygote.gradient(() -> sum(slicemap(f, x, dims=1)), Zygote.Params([w,x]))
+    @test grad_slicemap[x] ≈ gradx
+    @test grad_slicemap[w] ≈ gradw
+    @test gradw ≈ Zygote.gradient(w -> sum(slicemap(F(w), x, dims=1)), w)[1]
+    # Using F(w) with Params() gives wrong answers:
+    # https://github.com/FluxML/Zygote.jl/issues/522#issuecomment-605935652
+
+end

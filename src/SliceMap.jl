@@ -25,11 +25,13 @@ It provides a gradient for Tracker and Zygote, saving the backward function for 
 Any arguments after the matrix are passed to `f` as scalars, i.e.
 `mapcols(f, m, args...) = reduce(hcat, f(col, args...) for col in eeachcol(m))`.
 They do not get sliced/iterated (unlike `map`), nor are their gradients tracked.
-"""
-mapcols(f::Function, M, args...) = _mapcols(map, f, M, args...)
-tmapcols(f::Function, M, args...) = _mapcols(threadmap, f, M, args...)
 
-function _mapcols(map::Function, f::Function, M::AbstractMatrix, args...)
+Note that if `f` itself contains parameters, their gradients are also not tracked.
+"""
+mapcols(f, M, args...) = _mapcols(map, f, M, args...)
+tmapcols(f, M, args...) = _mapcols(threadmap, f, M, args...)
+
+function _mapcols(map::Function, f, M::AbstractMatrix, args...)
     res = map(col -> _vec(f(col, args...)), eachcol(M))
     eltype(res) <: AbstractVector ? reduce(hcat, res) : reshape(res,1,:)
 end
@@ -37,12 +39,12 @@ end
 _vec(x) = x
 _vec(A::AbstractArray) = vec(A) # to allow f vector -> matrix, by reshaping
 
-_mapcols(map::Function, f::Function, M::TrackedMatrix, args...) = track(_mapcols, map, f, M, args...)
+_mapcols(map::Function, f, M::TrackedMatrix, args...) = track(_mapcols, map, f, M, args...)
 
-@grad _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
+@grad _mapcols(map::Function, f, M::AbstractMatrix, args...) =
     ∇mapcols(map, map(col -> Tracker.forward(x -> _vec(f(x, args...)), col), eachcol(data(M))), args...)
 
-@adjoint _mapcols(map::Function, f::Function, M::AbstractMatrix, args...) =
+@adjoint _mapcols(map::Function, f, M::AbstractMatrix, args...) =
     ∇mapcols(map, map(col -> ZygoteRules.pullback(x -> _vec(f(x, args...)), col), eachcol(M)), args)
 
 function ∇mapcols(bigmap, forwards, args...)
@@ -90,8 +92,11 @@ Like `mapcols()`, but for any slice. The function `f` must preserve shape,
 e.g. if `dims=(2,4)` then `f` must map matrices to matrices.
 
 The gradient is for Zygote only.
+
+Parameters within the function `f` (if there are any) should be correctly tracked,
+which is not the case for `mapcols()`.
 """
-function slicemap(f::Function, A::AbstractArray{T,N}, args...; dims) where {T,N}
+function slicemap(f, A::AbstractArray{T,N}, args...; dims) where {T,N}
     code = ntuple(d -> d in dims ? True() : False(), N)
     B = JuliennedArrays.Slices(A, code...)
     C = [ f(slice, args...) for slice in B ]

@@ -146,15 +146,24 @@ end
     xp = Tracker.param(x)
     Tracker.back!(sum(mapcols(F(wp), xp)))
     @test Tracker.grad(xp) ≈ gradx
-    @test_broken Tracker.grad(wp) ≈ gradw # zero
+    @test Tracker.grad(wp) == 0 .* gradw # bug or a feature?
 
-    grad_mapcols = Zygote.gradient(() -> sum(mapcols(F(w), x)), Zygote.Params([w,x]))
+    # fp = F(wp)
+    # wp.grad .= 0; xp.grad .= 0;
+    # Tracker.back!(sum(mapcols(fp, xp)))
+    # @test Tracker.grad(xp) ≈ gradx
+    # @test_broken Tracker.grad(wp) ≈ gradw # zero
+
+    f = F(w)
+    grad_mapcols = Zygote.gradient(() -> sum(mapcols(f, x)), Zygote.Params([w,x]))
     @test grad_mapcols[x] ≈ gradx
-    @test_broken grad_mapcols[w] ≈ gradw # grad_mapcols[w] === nothing
+    @test grad_mapcols[w] == nothing # bug or a feature?
 
-    grad_slicemap = Zygote.gradient(() -> sum(slicemap(F(w), x, dims=1)), Zygote.Params([w,x]))
+    grad_slicemap = Zygote.gradient(() -> sum(slicemap(f, x, dims=1)), Zygote.Params([w,x]))
     @test grad_slicemap[x] ≈ gradx
-    @test_broken grad_slicemap[w] ≈ gradw # wrong numbers
+    @test grad_slicemap[w] ≈ gradw
     @test gradw ≈ Zygote.gradient(w -> sum(slicemap(F(w), x, dims=1)), w)[1]
+    # Using F(w) with Params() gives wrong answers:
+    # https://github.com/FluxML/Zygote.jl/issues/522#issuecomment-605935652
 
 end

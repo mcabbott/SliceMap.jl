@@ -25,6 +25,8 @@ It provides a gradient for Tracker and Zygote, saving the backward function for 
 Any arguments after the matrix are passed to `f` as scalars, i.e.
 `mapcols(f, m, args...) = reduce(hcat, f(col, args...) for col in eeachcol(m))`.
 They do not get sliced/iterated (unlike `map`), nor are their gradients tracked.
+
+Note that if `f` itself contains parameters, their gradients are also not tracked.
 """
 mapcols(f, M, args...) = _mapcols(map, f, M, args...)
 tmapcols(f, M, args...) = _mapcols(threadmap, f, M, args...)
@@ -90,6 +92,9 @@ Like `mapcols()`, but for any slice. The function `f` must preserve shape,
 e.g. if `dims=(2,4)` then `f` must map matrices to matrices.
 
 The gradient is for Zygote only.
+
+Parameters within the function `f` (if there are any) should be correctly tracked,
+which is not the case for `mapcols()`.
 """
 function slicemap(f, A::AbstractArray{T,N}, args...; dims) where {T,N}
     code = ntuple(d -> d in dims ? True() : False(), N)

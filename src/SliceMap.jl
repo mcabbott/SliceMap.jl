@@ -95,11 +95,18 @@ The gradient is for Zygote only.
 
 Parameters within the function `f` (if there are any) should be correctly tracked,
 which is not the case for `mapcols()`.
+Keyword `rev=true` will apply `f` to `Iterators.reverse(Slices(A,...))`, thus iterating
+in the opposite order.
 """
-function slicemap(f, A::AbstractArray{T,N}, args...; dims) where {T,N}
+function slicemap(f, A::AbstractArray{T,N}, args...; dims, rev::Bool=false) where {T,N}
     code = ntuple(d -> d in dims ? True() : False(), N)
     B = JuliennedArrays.Slices(A, code...)
-    C = [ f(slice, args...) for slice in B ]
+    C = if rev==false
+        [ f(slice, args...) for slice in B ]
+    else
+        R = [ f(slice, args...) for slice in Iterators.reverse(B) ]
+        collect(Iterators.reverse(R))
+    end
     JuliennedArrays.Align(C, code...)
 end
 

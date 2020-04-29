@@ -167,3 +167,28 @@ end
     # https://github.com/FluxML/Zygote.jl/issues/522#issuecomment-605935652
 
 end
+@testset "slicemap rev=true" begin
+
+    rec(store) = x -> (push!(store, first(x)); x)
+    A = [1,1,1] .* (1:5)'
+    
+    store = []
+    slicemap(rec(store), A; dims=1)
+    @test store == 1:5
+
+    store = []
+    slicemap(rec(store), A; dims=1, rev=true)
+    @test store == 5:-1:1
+
+    # gradient check as above
+    ten = randn(3,4,5,2)
+    fun(x::AbstractVector) = sqrt(3) .+ x.^3 ./ (sum(x)^2)
+    res = mapslices(fun, ten, dims=3)
+    @test res ≈ slicemap(fun, ten; dims=3, rev=true)
+    @test res ≈ slicemap(fun, ten; dims=3, rev=false)
+
+    grad = ForwardDiff.gradient(x -> sum(sin, mapslices(fun, x, dims=3)), ten)
+    @test grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3, rev=false)), ten)[1]
+    @test grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3, rev=true)), ten)[1]
+
+end

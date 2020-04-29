@@ -104,11 +104,15 @@ function slicemap(f, A::AbstractArray{T,N}, args...; dims, rev::Bool=false) wher
     C = if rev==false
         [ f(slice, args...) for slice in B ]
     else
-        R = [ f(slice, args...) for slice in Iterators.reverse(B) ]
-        collect(Iterators.reverse(R))
+        R = [ f(slice, args...) for slice in iter_reverse(B) ]
+        iter_reverse(R)
     end
     JuliennedArrays.Align(C, code...)
 end
+
+iter_reverse(x) = collect(Iterators.reverse(x))
+
+@adjoint iter_reverse(x) = iter_reverse(x), dy -> (iter_reverse(dy),)
 
 #========== Forward, Static ==========#
 

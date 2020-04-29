@@ -276,8 +276,10 @@ end
     threadmap(f, A)
     threadmap(f, A, B)
 
-Simple version of `map` using a `Threads.@threads` loop;
-only for vectors & really at most two of them, of nonzero length,
+Simple version of `map` using a `Threads.@threads` loop,
+or `Threads.@spawn` on Julia >= 1.3.
+
+Only for vectors & really at most two of them, of nonzero length,
 with all outputs having the same type.
 """
 function threadmap(f::Function, vw::AbstractVector...)
@@ -286,14 +288,32 @@ function threadmap(f::Function, vw::AbstractVector...)
     out1 = f(first.(vw)...)
     _threadmap(out1, f, vw...)
 end
-# NB barrier
-function _threadmap(out1, f, vw...)
-    out = Vector{typeof(out1)}(undef, length(first(vw)))
-    out[1] = out1
-    Threads.@threads for i=2:length(first(vw))
-        @inbounds out[i] = f(getindex.(vw, i)...)
+# NB function barrier. Plus two versions:
+@static if VERSION >= v"1.3"
+
+    function _threadmap(out1, f, vw...)
+        out = Vector{typeof(out1)}(undef, length(first(vw)))
+        out[1] = out1
+        Threads.@threads for i in 2:length(first(vw))
+            @inbounds out[i] = f(getindex.(vw, i)...)
+        end
+        out
     end
-    out
+
+else
+
+    function _threadmap(out1, f, vw...)
+        ell = length(first(vw))
+        out = Vector{typeof(out1)}(undef, ell)
+        out[1] = out1
+        Base.@sync for is in Iterators.partition(2:ell, div(ell, Threads.nthreads()))
+            Threads.@spawn for i in is
+                @inbounds out[i] = f(getindex.(vw, i)...)
+            end
+        end
+        out
+    end
+
 end
 
 # Collect generators to allow indexing

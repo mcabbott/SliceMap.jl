@@ -22,6 +22,9 @@ For small slices, this will often be much faster, with or without gradients.
 
 The package also defines Zygote gradients for the Slice/Align functions in 
 [JuliennedArrays](https://github.com/bramtayl/JuliennedArrays.jl), 
-which is a good ways to roll-your-own `mapslices`-like thing.
+which is a good way to roll-your-own `mapslices`-like thing (and is exactly 
+how `slicemap(f, A; dims)` works). Similar gradients are also available in
+[TensorCast](https://github.com/mcabbott/TensorCast.jl), 
+and in [LazyStack](https://github.com/mcabbott/LazyStack.jl).
 
 There are more details & examples at [docs/intro.md](docs/intro.md). 

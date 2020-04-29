@@ -289,7 +289,7 @@ function threadmap(f::Function, vw::AbstractVector...)
     _threadmap(out1, f, vw...)
 end
 # NB function barrier. Plus two versions:
-@static if VERSION >= v"1.3"
+@static if VERSION < v"1.3"
 
     function _threadmap(out1, f, vw...)
         out = Vector{typeof(out1)}(undef, length(first(vw)))

@@ -297,7 +297,11 @@ function threadmap(f::Function, vw::AbstractVector...)
     length(first(vw))==0 && error("can't map over empty vector, sorry")
     length(vw)==2 && (isequal(length.(vw)...) || error("lengths must be equal"))
     out1 = f(first.(vw)...)
-    _threadmap(out1, f, vw...)
+    if length(vw) > 1
+        _threadmap(out1, f, vw...)
+    else
+        [out1]
+    end
 end
 # NB function barrier. Plus two versions:
 @static if VERSION < v"1.3"

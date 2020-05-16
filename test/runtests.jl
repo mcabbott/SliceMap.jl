@@ -39,6 +39,11 @@ Zygote.refresh()
     @test res ≈ jcols(fun, mat)
     @test grad ≈ Zygote.gradient(m -> sum(sin, jcols(fun, m)), mat)[1]
 
+    # Case of length 1, was an error for _threadmap
+    @test res[:,1:1] ≈ mapcols(fun, mat[:, 1:1])
+    @test res[:,1:1] ≈ tmapcols(fun, mat[:, 1:1])
+    @test res[:,1:1] ≈ ThreadMapCols(fun, mat[:, 1:1])
+
 end
 @testset "columns -> scalar" begin
 
@@ -171,7 +176,7 @@ end
 
     rec(store) = x -> (push!(store, first(x)); x)
     A = [1,1,1] .* (1:5)'
-    
+
     store = []
     slicemap(rec(store), A; dims=1)
     @test store == 1:5

@@ -297,7 +297,7 @@ function threadmap(f::Function, vw::AbstractVector...)
     length(first(vw))==0 && error("can't map over empty vector, sorry")
     length(vw)==2 && (isequal(length.(vw)...) || error("lengths must be equal"))
     out1 = f(first.(vw)...)
-    if length(vw) > 1
+    if length(first(vw)) > 1
         _threadmap(out1, f, vw...)
     else
         [out1]
@@ -321,7 +321,7 @@ else
         ell = length(first(vw))
         out = Vector{typeof(out1)}(undef, ell)
         out[1] = out1
-        Base.@sync for is in Iterators.partition(2:ell, div(ell, Threads.nthreads()))
+        Base.@sync for is in Iterators.partition(2:ell, cld(ell-1, Threads.nthreads()))
             Threads.@spawn for i in is
                 @inbounds out[i] = f(getindex.(vw, i)...)
             end

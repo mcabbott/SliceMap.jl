@@ -1,6 +1,7 @@
 # SliceMap.jl
 
-Some examples & benchmarks. 
+Some examples & benchmarks. Times shown were on Julia 1.2 I think, 
+and some have improved quite a bit since. 
 
 ## Simple example
 
@@ -66,12 +67,10 @@ Zygote.gradient(m -> sum(sin, jumap(fun, m)), mat)[1]
 @btime Zygote.gradient(m -> sum(jumap1(fun, m)), $mat1k) #    412.904 μs, really?
 ```
 
-It used to do the same thing for the slice/glue functions in 
-[TensorCast](https://github.com/mcabbott/TensorCast.jl),
-but but that should soon be part of that package:
+Similar gradients also moved to [TensorCast](https://github.com/mcabbott/TensorCast.jl):
 
 ```julia
-using TensorCast#two
+using TensorCast
 @cast [i,j] := fun(mat[:,j])[i]                   # same as mapcols
 
 tcm(mat) = @cast out[i,j] := fun(mat[:,j])[i]

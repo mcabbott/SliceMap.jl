@@ -1,6 +1,6 @@
 # SliceMap.jl
 
-[![Build Status](https://travis-ci.org/mcabbott/SliceMap.jl.svg?branch=master)](https://travis-ci.org/mcabbott/SliceMap.jl)
+[![Build Status](https://travis-ci.com/mcabbott/SliceMap.jl.svg?branch=master)](https://travis-ci.com/mcabbott/SliceMap.jl)
 
 This package provides some `mapslices`-like functions, with gradients defined for 
 [Tracker](https://github.com/FluxML/Tracker.jl) and [Zygote](https://github.com/FluxML/Zygote.jl):

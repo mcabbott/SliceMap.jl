@@ -47,6 +47,20 @@ mat1k = rand(3,1000);
 
 On recent versions of Julia, `mapcols` has become much faster, 5-10 times. 
 
+FWIW, times on Julia 1.7-dev & and M1 mac, April 2021:
+
+```
+@btime mapreduce(fun, hcat, eachcol($mat1k)) # 616.250 μs (2317 allocations: 11.69 MiB)
+@btime mapslices(fun, $mat1k, dims=1)        # 230.250 μs (7499 allocations: 298.23 KiB)
+@btime mapcols(fun, $mat1k)                  #  26.750 μs (1003 allocations: 140.83 KiB)
+@btime MapCols{3}(fun, $mat1k)               #   6.067 μs (9 allocations: 47.20 KiB)
+@btime MapCols(fun, $mat1k)                  #   6.217 μs (9 allocations: 47.20 KiB)
+
+@btime ForwardDiff.gradient(m -> sum(mapslices(fun, m, dims=1)), $mat1k); # 70.815 ms (1877210 allocations: 210.64 MiB)
+@btime Tracker.gradient(m -> sum(mapcols(fun, m)), $mat1k);               # 29.840 ms (598046 allocations: 26.20 MiB)
+@btime Tracker.gradient(m -> sum(MapCols{3}(fun, m)), $mat1k);            # 25.833 μs (60 allocations: 283.23 KiB)
+```
+
 ## Other packages
 
 This package also provides Zygote gradients for the Slice/Align functions in 

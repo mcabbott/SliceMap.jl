@@ -1,7 +1,7 @@
 name = "SliceMap"
 uuid = "82cb661a-3f19-5665-9e27-df437c7e54c8"
 authors = ["Michael Abbott"]
-version = "0.2.5"
+version = "0.2.6"
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -12,7 +12,7 @@ ZygoteRules = "700de1a5-db45-46bc-99cf-38207098b444"
 
 [compat]
 ForwardDiff = "0.8, 0.9, 0.10"
-JuliennedArrays = "0.0.3, 0.2"
+JuliennedArrays = "0.3"
 StaticArrays = "0.10, 0.11, 0.12, 1.0"
 Tracker = "0.2"
 Zygote = "0.4, 0.5, 0.6"

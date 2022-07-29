@@ -35,7 +35,7 @@ Zygote.refresh()
     @test grad ≈ Zygote.gradient(m -> sum(sin, tmapcols(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, ThreadMapCols{3}(fun, m)), mat)[1]
 
-    jcols(f,m) = Align(map(f, Slices(m, True(), False())), True(), False())
+    jcols(f,m) = Align(map(f, JuliennedArrays.Slices(m, True(), False())), True(), False())
     @test res ≈ jcols(fun, mat)
     @test grad ≈ Zygote.gradient(m -> sum(sin, jcols(fun, m)), mat)[1]
 
@@ -111,7 +111,7 @@ end
     @test grad ≈ Tracker.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
     @test grad ≈ Zygote.gradient(m -> sum(sin, maprows(fun, m)), mat)[1]
 
-    jrows(f,m) = Align(map(f, Slices(m, False(), True())), False(), True())
+    jrows(f,m) = Align(map(f, JuliennedArrays.Slices(m, False(), True())), False(), True())
     @test res ≈ jrows(fun, mat)
     @test grad ≈ Zygote.gradient(m -> sum(sin, jrows(fun, m)), mat)[1]
 
@@ -128,12 +128,12 @@ end
     @test grad ≈ Zygote.gradient(x -> sum(sin, slicemap(fun, x, dims=3)), ten)[1]
 
     jthree(f,m) = Align(map(f,
-        Slices(m, False(), False(), True(), False())
+        JuliennedArrays.Slices(m, False(), False(), True(), False())
         ), False(), False(), True(), False())
     @test res ≈ jthree(fun, ten)
     @test grad ≈ Zygote.gradient(m -> sum(sin, jthree(fun, m)), ten)[1]
 
-    j3(f,m) = Align(map(f, Slices(m, 3)), 3)
+    j3(f,m) = Align(map(f, JuliennedArrays.Slices(m, 3)), 3)
     @test res ≈ j3(fun, ten)
     @test grad ≈ Zygote.gradient(m -> sum(sin, j3(fun, m)), ten)[1]
 

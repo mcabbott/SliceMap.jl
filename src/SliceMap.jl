@@ -185,11 +185,10 @@ end
 #= JuliennedArrays =#
 
 @adjoint JuliennedArrays.Slices(whole, along...) =
-    Slices(whole, along...), Δ -> (Align(Δ, along...), map(_->nothing, along)...)
+    JuliennedArrays.Slices(whole, along...), Δ -> (Align(Δ, along...), map(_->nothing, along)...)
 
 @adjoint JuliennedArrays.Align(whole, along...) =
-    Align(whole, along...), Δ -> (Slices(Δ, along...), map(_->nothing, along)...)
-
+    Align(whole, along...), Δ -> (JuliennedArrays.Slices(Δ, along...), map(_->nothing, along)...)
 #= Base =#
 
 @adjoint Base.reduce(::typeof(hcat), V::AbstractVector{<:AbstractVector}) =

@@ -28,3 +28,5 @@ how `slicemap(f, A; dims)` works). Similar gradients are also available in
 and in [LazyStack](https://github.com/mcabbott/LazyStack.jl).
 
 There are more details & examples at [docs/intro.md](docs/intro.md). 
+
+

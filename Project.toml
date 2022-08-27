@@ -12,7 +12,7 @@ ZygoteRules = "700de1a5-db45-46bc-99cf-38207098b444"
 
 [compat]
 ForwardDiff = "0.10"
-JuliennedArrays = "0.3"
+JuliennedArrays = "0.3, 0.4"
 StaticArrays = "1.0"
 Tracker = "0.2"
 Zygote = "0.6"

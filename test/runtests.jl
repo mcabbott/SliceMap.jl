@@ -3,8 +3,6 @@ using SliceMap
 using Test
 using ForwardDiff, Tracker, Zygote, JuliennedArrays
 
-Zygote.refresh()
-
 @testset "columns" begin
 
     mat = rand(1:9, 3,10)

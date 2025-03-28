@@ -1,7 +1,7 @@
 name = "SliceMap"
 uuid = "82cb661a-3f19-5665-9e27-df437c7e54c8"
 authors = ["Michael Abbott"]
-version = "0.2.7"
+version = "0.2.9"
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -11,13 +11,13 @@ Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
 ZygoteRules = "700de1a5-db45-46bc-99cf-38207098b444"
 
 [compat]
-ForwardDiff = "0.10"
+ForwardDiff = "0.10, 1"
 JuliennedArrays = "0.3, 0.4"
 StaticArrays = "1.0"
 Tracker = "0.2"
-Zygote = "0.6"
+Zygote = "0.6, 0.7"
 ZygoteRules = "0.2"
-julia = "1.6"
+julia = "1.10"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
